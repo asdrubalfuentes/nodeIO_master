@@ -2,6 +2,7 @@
 #include "master_config.h"
 #include "lora_master.h"
 #include "io.h"
+#include "log.h"
 #include <ModbusRTU.h>
 
 static ModbusRTU mb;
@@ -40,9 +41,19 @@ static uint16_t onLocalCoil(TRegister* reg, uint16_t val) {
 
 // ---- setup --------------------------------------------------------
 void modbusBegin() {
-  Serial1.begin(mcfg.mbBaud, mbFormatToConfig(mcfg.mbFormat), mcfg.mbRxPin, mcfg.mbTxPin);
-  if (mcfg.mbDePin >= 0) mb.begin(&Serial1, mcfg.mbDePin);
-  else                   mb.begin(&Serial1);
+  uint32_t fmt = mbFormatToConfig(mcfg.mbFormat);
+
+  if (mcfg.mbUsb) {
+    // Modbus on the USB UART (UART0, GPIO43/44). Re-open the port that
+    // heltec_setup() left at 115200 8N1 with the configured Modbus framing.
+    Serial.end();
+    Serial.begin(mcfg.mbBaud, fmt, mcfg.mbRxPin, mcfg.mbTxPin);
+    mb.begin(&Serial);                 // direct link, no DE/RE
+  } else {
+    Serial1.begin(mcfg.mbBaud, fmt, mcfg.mbRxPin, mcfg.mbTxPin);
+    if (mcfg.mbDePin >= 0) mb.begin(&Serial1, mcfg.mbDePin);
+    else                   mb.begin(&Serial1);
+  }
   mb.setBaudrate(mcfg.mbBaud);
   mb.slave(mcfg.mbSlaveId);
 
@@ -60,9 +71,9 @@ void modbusBegin() {
     mb.onSetCoil(LOCAL_COIL, onLocalCoil, 4);
   }
 
-  Serial.printf("[modbus] RTU slave %u @ %lu fmt %u  RX%d TX%d DE%d\n",
-                mcfg.mbSlaveId, (unsigned long)mcfg.mbBaud, mcfg.mbFormat,
-                mcfg.mbRxPin, mcfg.mbTxPin, mcfg.mbDePin);
+  LOGF("[modbus] RTU slave %u @ %lu fmt %u  %s\n",
+       mcfg.mbSlaveId, (unsigned long)mcfg.mbBaud, mcfg.mbFormat,
+       mcfg.mbUsb ? "USB UART0" : "Serial1 RS-485");
 }
 
 // ---- publish ----------------------------------------------------

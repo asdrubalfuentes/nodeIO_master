@@ -4,7 +4,7 @@
 MasterConfig mcfg;
 
 static const char*    NVS_NS    = "masterio";
-static const uint32_t CFG_MAGIC = 0xA75A3E01;   // bump on struct layout change
+static const uint32_t CFG_MAGIC = 0xA75A3E02;   // bump on struct layout change
 
 void masterConfigFactory() {
   mcfg = MasterConfig{};
@@ -13,9 +13,10 @@ void masterConfigFactory() {
   mcfg.mbSlaveId = 1;
   mcfg.mbBaud    = 19200;
   mcfg.mbFormat  = 1;              // 8E1
-  mcfg.mbRxPin   = 2;
-  mcfg.mbTxPin   = 3;
-  mcfg.mbDePin   = 4;
+  mcfg.mbUsb     = true;           // bench default: Modbus over USB UART0 (GPIO43/44)
+  mcfg.mbRxPin   = 44;            // U0RXD  (RS-485 carrier default was 2/3/4)
+  mcfg.mbTxPin   = 43;            // U0TXD
+  mcfg.mbDePin   = -1;           // direct link, no RS-485 direction control
 
   mcfg.loraFreq  = 915.0f;
   mcfg.loraBw    = 125.0f;

@@ -6,6 +6,7 @@
 #include "lora_master.h"
 #include "modbus_gw.h"
 #include "portal_master.h"
+#include "log.h"
 
 // Master IO - by Aysafi
 // LoRa <-> Modbus RTU gateway. Polls up to 8 adopted nodeIO nodes over LoRa and
@@ -69,7 +70,7 @@ static void drawStatusScreen() {
   display.drawString(0, 14, l);
   snprintf(l, sizeof(l), "Modbus %u @ %lu %s", mcfg.mbSlaveId,
            (unsigned long)mcfg.mbBaud,
-           mcfg.mbDePin >= 0 ? "485" : "ttl");
+           mcfg.mbUsb ? "usb" : (mcfg.mbDePin >= 0 ? "485" : "ttl"));
   display.drawString(0, 28, l);
   if (lastAddr) snprintf(l, sizeof(l), "ult. addr %u rssi %d", lastAddr, lastRssi);
   else          snprintf(l, sizeof(l), "sin respuestas aun");
@@ -80,18 +81,18 @@ static void drawStatusScreen() {
 // ---------------------------------------------------------------------------
 void setup() {
   heltec_setup();
-  Serial.println("\nMaster IO gateway, by Aysafi " FW_VERSION);
-
   masterConfigLoad();
+  LOGLN("\nMaster IO gateway, by Aysafi " FW_VERSION);
+
   ioInit(0x00, 0x00);          // buttons + safe relays; local IO read only if enabled
   splash();
 
   if (mcfg.nodeCount == 0) {
-    Serial.println("[cfg] sin nodos -> portal");
+    LOGLN("[cfg] sin nodos -> portal");
     masterBegin();             // radio up so discovery works from the portal
     enterPortal();
   } else if (!masterBegin()) {
-    Serial.println("[lora] fallo de init -> portal");
+    LOGLN("[lora] fallo de init -> portal");
     enterPortal();
   } else {
     modbusBegin();

@@ -1,6 +1,7 @@
 #include "portal_master.h"
 #include "master_config.h"
 #include "lora_master.h"
+#include "log.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
@@ -88,21 +89,25 @@ static String buildPage() {
   h += "<div><label>Timeout ACK ms</label><input name=ackms type=number min=50 max=10000 value=" + String(mcfg.ackTimeoutMs) + "></div>";
   h += "<div><label>Fallos->OFFLINE</label><input name=offa type=number min=1 max=20 value=" + String(mcfg.offlineAfter) + "></div>";
   h += "<div><label>Pulso ms (coil)</label><input name=pulms type=number min=10 max=60000 value=" + String(mcfg.pulseMs) + "></div></div>";
-  h += F("</fieldset><fieldset><legend>Modbus RTU (RS-485)</legend>");
+  h += F("</fieldset><fieldset><legend>Modbus RTU</legend>");
+  h += "<label><input type=checkbox name=mbusb style=width:auto" +
+       String(mcfg.mbUsb ? " checked" : "") +
+       "> Salir por USB (UART0 GPIO43/44) &mdash; desactiva la consola de log. "
+       "Sin marcar = RS-485 por Serial1 con los pines de abajo.</label>";
   h += "<div class=row><div><label>Slave ID</label><input name=mbid type=number min=1 max=247 value=" + String(mcfg.mbSlaveId) + "></div>";
   h += "<div><label>Baud</label><input name=mbbaud type=number value=" + String(mcfg.mbBaud) + "></div>";
   h += "<div><label>Formato</label><select name=mbfmt>";
   for (int f = 0; f < 6; f++) h += opt(f, mcfg.mbFormat, FMT_NAMES[f]);
   h += "</select></div></div>";
-  h += "<div class=row><div><label>Pin RX</label><input name=mbrx type=number value=" + String(mcfg.mbRxPin) + "></div>";
-  h += "<div><label>Pin TX</label><input name=mbtx type=number value=" + String(mcfg.mbTxPin) + "></div>";
+  h += "<div class=row><div><label>Pin RX (RS-485)</label><input name=mbrx type=number value=" + String(mcfg.mbRxPin) + "></div>";
+  h += "<div><label>Pin TX (RS-485)</label><input name=mbtx type=number value=" + String(mcfg.mbTxPin) + "></div>";
   h += "<div><label>Pin DE (-1=none)</label><input name=mbde type=number value=" + String(mcfg.mbDePin) + "></div></div>";
   h += F("</fieldset><fieldset><legend>IO local</legend>"
          "<label><input type=checkbox name=locio style=width:auto");
   h += String(mcfg.localIoEnabled ? " checked" : "") +
        "> Leer entradas/reles del propio carrier (Modbus Ireg 904+, Coil 900+)";
-  h += F("<p style=color:#c96>Aviso: por defecto RX/TX/DE de Modbus usan la regleta AI "
-         "(GPIO2/3/4). Si activas IO local, mueve esos pines.</p></fieldset>");
+  h += F("<p style=color:#c96>Aviso: en modo RS-485 los pines RX/TX/DE por defecto son "
+         "la regleta AI (GPIO2/3/4). Si activas IO local, muevelos.</p></fieldset>");
   h += F("<fieldset><legend>WiFi del portal</legend>");
   h += "<label>SSID</label><input name=apssid maxlength=23 value='" + String(mcfg.apSsid) + "'>";
   h += "<label>Clave (min 8, vac&iacute;o = abierta)</label><input name=appass maxlength=23 value='" + String(mcfg.apPass) + "'>";
@@ -135,6 +140,7 @@ static void handleSave() {
   mcfg.offlineAfter = (uint8_t)constrain(argL("offa", mcfg.offlineAfter), 1, 20);
   mcfg.pulseMs      = (uint16_t)constrain(argL("pulms", mcfg.pulseMs), 10, 60000);
 
+  mcfg.mbUsb     = web.hasArg("mbusb");
   mcfg.mbSlaveId = (uint8_t)constrain(argL("mbid", mcfg.mbSlaveId), 1, 247);
   mcfg.mbBaud    = (uint32_t)argL("mbbaud", mcfg.mbBaud);
   mcfg.mbFormat  = (uint8_t)constrain(argL("mbfmt", mcfg.mbFormat), 0, 5);
@@ -156,7 +162,7 @@ static void handleSave() {
 
 static void handleScan() {
   uint8_t n = masterDiscover();
-  Serial.printf("[portal] discover -> %u nodo(s)\n", n);
+  LOGF("[portal] discover -> %u nodo(s)\n", n);
   redirectHome();
 }
 
@@ -210,7 +216,7 @@ void portalStart() {
   web.begin();
 
   portalActive = true;
-  Serial.printf("[portal] AP '%s' en %s\n", mcfg.apSsid, ip.toString().c_str());
+  LOGF("[portal] AP '%s' en %s\n", mcfg.apSsid, ip.toString().c_str());
 }
 
 void portalStop() {

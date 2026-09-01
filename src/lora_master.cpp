@@ -1,4 +1,5 @@
 #include "lora_master.h"
+#include "log.h"
 #include <RadioLib.h>
 #include <CRC32.h>
 
@@ -110,13 +111,13 @@ bool masterBegin() {
   int16_t st = radio.begin(mcfg.loraFreq, mcfg.loraBw, mcfg.loraSf,
                            mcfg.loraCr, mcfg.loraSync, mcfg.loraPwr, 8);
   if (st != RADIOLIB_ERR_NONE) {
-    Serial.printf("[lora] begin() fallo, code %d\n", st);
+    LOGF("[lora] begin() fallo, code %d\n", st);
     return false;
   }
   radio.setDio1Action(onDio1);
   radio.startReceive();
-  Serial.printf("[lora] GATEWAY %.1f MHz SF%u BW%.0f addr %u, %u nodo(s)\n",
-                mcfg.loraFreq, mcfg.loraSf, mcfg.loraBw, mcfg.masterLoraAddr, mcfg.nodeCount);
+  LOGF("[lora] GATEWAY %.1f MHz SF%u BW%.0f addr %u, %u nodo(s)\n",
+       mcfg.loraFreq, mcfg.loraSf, mcfg.loraBw, mcfg.masterLoraAddr, mcfg.nodeCount);
   return true;
 }
 

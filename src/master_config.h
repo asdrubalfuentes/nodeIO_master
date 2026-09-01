@@ -18,7 +18,9 @@ struct MasterConfig {
   uint8_t  mbSlaveId;                   // default 1
   uint32_t mbBaud;                      // default 19200
   uint8_t  mbFormat;                    // 0=8N1 1=8E1 2=8O1 3=8N2 4=8E2 5=8O2  (default 1)
-  int8_t   mbRxPin, mbTxPin, mbDePin;   // default 2, 3, 4 ; DE = -1 -> no direction control
+  int8_t   mbRxPin, mbTxPin, mbDePin;   // RS-485 mode: default 2, 3, 4 ; DE = -1 -> no direction control
+  bool     mbUsb;                       // true -> Modbus runs on Serial (UART0, GPIO43/44 = USB);
+                                        //         console logging is suppressed, DE ignored. (default true)
 
   // --- LoRa channel (authoritative; pushed to nodes on ADOPT) ---
   float    loraFreq, loraBw;            // 915.0 / 125.0
