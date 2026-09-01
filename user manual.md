@@ -2,202 +2,114 @@
 
 Placa: **Heltec WiFi LoRa 32 V3**. Firmware: `Master IO gateway`.
 
-El Master IO es una **pasarela**: por un lado sondea por radio LoRa hasta **8
-nodos `nodeIO`** remotos; por el otro es un **esclavo Modbus RTU** en el puerto
-serie (RS-485). Un PLC / SCADA lee por Modbus las entradas analógicas y digitales
-de cada nodo y escribe sus salidas de relé. El Master **no usa sus propias
-entradas/relés** salvo que se active "IO local" en el portal.
+El Master IO es una **pasarela**: por un lado sondea por radio LoRa hasta **8 nodos `nodeIO`** remotos; por el otro es un **esclavo Modbus RTU** en el puerto serie (USB o RS-485).
 
 ---
 
-## 1. Conexiones
+## 1. Primeros pasos
 
-| Señal | Pin (por defecto, configurable) | Notas |
-|---|---|---|
-| Modbus RTU RX | GPIO2 | a RO del transceptor RS-485 |
-| Modbus RTU TX | GPIO3 | a DI del transceptor RS-485 |
-| Modbus RTU DE/RE | GPIO4 | control de dirección del RS-485 (−1 = sin control, TTL) |
-| Botón BUTTON_1 | GPIO47 | pulsación larga (~3 s) → portal de configuración |
-| USB-C | — | **solo consola de log** (115200); el bus Modbus va por RS-485 |
-
-> Los pines de Modbus por defecto (GPIO2/3/4) son la regleta de entradas
-> analógicas del carrier. Solo es válido con "IO local" **desactivado** (que es lo
-> normal). Si activas IO local, cambia esos pines en el portal.
+1. **Flashea uno o varios `nodeIO`**. Al no estar adoptados mostrarán **"SIN ADOPTAR"** en la OLED.
+2. **Flashea el Master IO**. Sin nodos, entra automáticamente en el **portal de configuración**.
+3. **Botón Builtin** (presión larga ~5 s) → entra al portal (en cualquier momento).
+4. Conéctate por WiFi a `MasterIO-Setup` / `aysafi1234` y abre `http://192.168.4.1`.
+5. **Descubrir nodos** → teclea dirección LoRa (1–254) + nombre para cada nodo.
+6. **Guardar y reiniciar** → el Master arranca en modo normal.
 
 ---
 
-## 2. Puesta en marcha
+## 2. Operación normal
 
-1. Flashea uno o varios `nodeIO`. Al no estar adoptados muestran **"SIN ADOPTAR"**
-   y su **MAC** en la OLED, y quedan a la escucha.
-2. Flashea el Master IO. Con la tabla de nodos vacía **arranca directamente en el
-   portal**.
-3. Conéctate por WiFi a `MasterIO-Setup` / `aysafi1234` y abre `http://192.168.4.1`.
-4. **Descubrir nodos** → "Buscar nodos sin adoptar". Aparecen las MAC encontradas.
-5. Para cada una: teclea una **dirección LoRa** (1–254, única) y un nombre →
-   "Agregar". El nodo responde, se guarda en la tabla y **reinicia adoptado**.
-6. Repite para los demás nodos (hasta 8).
-7. Ajusta **Modbus RTU** (Slave ID, baud, formato, pines) según tu cableado y pulsa
-   **Guardar y reiniciar**.
-8. El Master arranca en modo normal (OLED: `Nodos online 2/2`, `Modbus 1 @ 19200 485`).
-
----
-
-## 3. Operación normal
-
-La pantalla OLED muestra:
-
+**Pantalla principal** (OLED):
 ```
 MASTER IO / gateway
-Nodos online 2/2          <- nodos que responden / configurados
-Modbus 1 @ 19200 485      <- slave id, baudios, RS-485 (o ttl)
-ult. addr 1 rssi -78      <- último nodo que contestó y su señal
+Nodos online 2/2
+Modbus 1 @ 19200 usb
+ult. addr 1 rssi -78
 ```
 
-El Master recorre en bucle su tabla de nodos, envía `RD` a cada uno y publica la
-respuesta en los registros Modbus. Un nodo que falla `Fallos->OFFLINE` veces
-seguidas se marca offline.
-
-Pulsación larga de **BUTTON_1** → vuelve al portal (se detiene el polling y
-Modbus; la radio sigue disponible para descubrir/adoptar).
+**Botones:**
+- **F1** (presión corta ~1 s) → abre **menú de nodos**
+- **Botón Builtin** (presión larga ~5 s) → portal de configuración
 
 ---
 
-## 4. Mapa Modbus
+## 3. Menú de nodos
 
-Esclavo con el **Slave ID** configurado (por defecto 1). Bloque por nodo `i`
-(0–7), base `i*16`:
+Presiona **F1** corto:
+```
+MENU NODOS
+-> Global
+  Nodo 3
+  Nodo 5
+  Nodo 7
+[F1+F2]=Enter [F2]=Salir
+```
 
-| Función Modbus | Offset | Contenido |
-|---|---|---|
-| Input Register (FC04) | `i*16 + 0..3` | AI1..AI4 del nodo (0–4095) |
-| | `i*16 + 4` | bits de entradas digitales (bit0..3 = DI1..DI4) |
-| | `i*16 + 5` | bits de relés (bit0..3 = estado, bit8..11 = deshabilitado `x`) |
-| | `i*16 + 6` | enlace: 0 = offline, 1 = online |
-| | `i*16 + 7` | RSSI en dBm (int16 con signo) |
-| | `i*16 + 8` | segundos desde la última respuesta |
-| | `i*16 + 9` | dirección LoRa del nodo (0 = ranura vacía) |
-| Discrete Input (FC02) | `i*16 + 0..3` | DI1..DI4 |
-| | `i*16 + 4` | enlace online |
-| Coil (FC01/05/15) | `i*16 + 0..3` | consigna de relé RO1..RO4 (escribir 1 = cerrar) |
-| | `i*16 + 4..7` | disparo de pulso RO1..RO4 (escribir 1 → pulso; se autolimpia) |
+**Navegación:**
+- **F1** (mant. presión) → subir
+- **F2** (mant. presión) → bajar
+- **F1 + F2** juntos → seleccionar nodo
+- **F2** corto → salir al menú principal
 
-Bloque global (Input Register):
+---
 
-| Offset | Contenido |
-|---|---|
-| 900 | marca de versión (0x0203) |
-| 901 | nº de nodos configurados |
-| 902 | nº de nodos online |
-| 903 | IO local activada (0/1) |
-| 904–907 | (si IO local) AI1..AI4 del propio Master |
-| 908 | (si IO local) bits DI del Master |
-| 909 | (si IO local) bits relés del Master |
+## 4. Ver datos de un nodo
 
-Coils 900–903: (si IO local) relés del propio Master.
-
-Ejemplo con `mbpoll`:
+Selecciona un nodo en el menú → ves sus datos en vivo:
 
 ```
-mbpoll -m rtu -b 19200 -P even -a 1 -t 3 -r 1 -c 16 /dev/ttyUSB0   # Ireg nodo 0
-mbpoll -m rtu -b 19200 -P even -a 1 -t 0 -r 1 /dev/ttyUSB0 1       # cerrar relé 1 del nodo 0
+Nodo 3
+AI: 1023 512 256 0
+DI: 1 0 1 0
+RO: 1 0 0 1
+RSSI: -75 | ON
+[F1/F2]=Nav [F2L]=Menu
 ```
+
+**Navegación:**
+- **F1** (presión corta) → nodo anterior
+- **F2** (presión corta) → nodo siguiente
+- **F2** (presión larga ~3 s) → volver al menú
 
 ---
 
 ## 5. Portal de configuración
 
-Se entra con **BUTTON_1 largo (~3 s)** o automáticamente si no hay nodos.
-Secciones:
+Entra con **Botón Builtin** (presión larga).
 
-- **Nodos adoptados**: tabla con dirección, nombre, MAC y estado. Botones
-  *Activar/Desactivar* y *Quitar* (envía `RELEASE` y libera la ranura).
-- **Descubrir nodos**: "Buscar" hace un barrido LoRa (`DISC`); lista las MAC sin
-  adoptar; por cada una, dirección (obligatoria) + nombre → "Agregar".
-- **LoRa**: dirección de la pasarela, frecuencia, BW, SF, CR, sync, potencia, y
-  tiempos de sondeo / timeout / fallos-para-offline / ancho de pulso. **Este es el
-  canal que se empuja a los nodos al adoptarlos.**
-- **Modbus RTU**: Slave ID, baudios, formato (8N1…8O2), pines RX/TX/DE.
-- **IO local**: casilla para leer las entradas/relés del propio carrier
-  (por defecto desactivada).
-- **WiFi del portal**: SSID y clave.
+**Secciones:**
+- **Nodos adoptados**: activar/desactivar / quitar
+- **Descubrir nodos**: buscar y adoptar nuevos
+- **LoRa**: dirección, frecuencia, potencia, tiempos
+- **Modbus RTU**: Slave ID, baud, formato, pines
+- **IO local**: leer entradas/relés del Master (opcional)
+- **WiFi**: SSID y contraseña del portal
 
-"Guardar y reiniciar" persiste todo en memoria no volátil.
+"Guardar y reiniciar" persiste la configuración.
 
 ---
 
-## 6. Valores de fábrica
+## 6. Valores por defecto
 
 | Parámetro | Valor |
 |---|---|
-| Dirección LoRa de la pasarela | 200 |
+| Dirección LoRa del Master | 200 |
 | LoRa | 915.0 MHz · BW 125 kHz · SF 9 · CR 4/5 · sync 0x34 · 14 dBm |
-| Sondeo / timeout / offline | 250 ms / 500 ms / 3 fallos |
-| Ancho de pulso (coil) | 500 ms |
-| Modbus | Slave 1 · 19200 · 8E1 · RX GPIO2 · TX GPIO3 · DE GPIO4 |
-| IO local | desactivada |
+| Sondeo / timeout | 250 ms / 500 ms |
+| Modbus | Slave 1 · 19200 · 8E1 · por USB |
+| Ancho de pulso (relé) | 500 ms |
 | WiFi portal | `MasterIO-Setup` / `aysafi1234` |
-| Nodos | ninguno (arranca en el portal) |
 
 ---
 
 ## 7. Problemas frecuentes
 
-| Síntoma | Causa probable / solución |
+| Síntoma | Solución |
 |---|---|
-| "Buscar" no encuentra el nodo | el nodo ya está adoptado (por este u otro master); o canal LoRa distinto del de fábrica; acerca las antenas |
-| Adopción falla ("sin ACK") | la dirección ya está en uso; repite el barrido; comprueba enlace |
-| Un nodo siempre offline | canal LoRa del portal distinto del que tenía el nodo; re-adóptalo, o sube el timeout |
-| El PLC no lee nada | Slave ID / baud / paridad no coinciden; DE del RS-485 mal cableado; A/B invertidos |
-| Escribo una coil y el relé no cambia | el relé está deshabilitado en el nodo (bit `x` en Ireg `i*16+5`); o el nodo está offline |
-| Quiero mover un nodo a otro master | en este portal "Quitar" (envía RELEASE) y adóptalo en el otro |
-| El Master se reinicia al conectarse por Modbus (USB) | el cable USB / CP210x está toggling DTR/RTS, que resetea el ESP32. **Solución software**: la webapp debe abrir el puerto **con DTR=False y RTS=False** ANTES de `connect()`. Ver **§8. Pruebas Modbus**. **Solución hardware**: usa un cable USB sin DTR/RTS, o puentea el capacitor de reset (C9) de la placa. |
+| "Buscar" no encuentra el nodo | el nodo está adoptado en otro master, o canal LoRa diferente; acerca antenas |
+| Un nodo siempre offline | re-adóptalo o sube el timeout en LoRa |
+| El PLC no lee Modbus | verifica Slave ID, baud, paridad; DE del RS-485 mal cableado |
+| Escribo coil y relé no cambia | el relé está deshabilitado en el nodo, o offline |
+| Master se reinicia al conectar por USB | el cable tiene DTR/RTS activos. Solución: cable USB sin DTR/RTS, o software (ver **Detalles técnicos**) |
 
----
-
-## 8. Pruebas Modbus
-
-El repositorio incluye scripts Python en `/tools/` para ejercitar el esclavo Modbus en banco, sin un PLC real. Requisitos:
-
-```sh
-pip install -r tools/requirements.txt   # pymodbus 3.5.0, pyserial 3.5
-```
-
-### Snapshots y monitoreo
-
-```sh
-# Lectura única de bloque global + 8 bloques de nodo
-python tools/mb_dump.py --port COM8
-
-# Monitor continuo (5 Hz)
-python tools/mb_watch.py --port COM8 --interval 1
-
-# Secuencia: close relé → pulse → open (en una conexión)
-python tools/mb_test.py --port COM8 --node 0 --relay 1 --poll-wait 2
-```
-
-### Escritura de relés
-
-```sh
-python tools/mb_relay.py --port COM8 --node 0 --relay 1 --on
-python tools/mb_relay.py --port COM8 --node 0 --relay 1 --off
-python tools/mb_relay.py --port COM8 --node 0 --relay 1 --pulse
-```
-
-Flags comunes: `--port`, `--baud` (def. 19200), `--parity {N,E,O}` (def. E=8E1), `--stopbits {1,2}`, `--slave` (def. 1), `--timeout` (def. 1.0).
-
-### DTR/RTS: la trampa silenciosa
-
-**El CP210x de USB resetea el ESP32 al abrir el puerto** si DTR/RTS va alto. Los scripts lo evitan:
-
-```python
-import serial
-ser = serial.Serial()
-ser.dtr = False   # ← CRÍTICO: ANTES de open()
-ser.rts = False
-ser.open()
-time.sleep(3)     # espera a que se estabilice
-ser.reset_input_buffer()
-```
-
-**Si tu webapp no lo hace**, el Master bootloops. Solución: aplica lo de arriba en tu cliente Modbus, o usa un cable USB que no tenga DTR/RTS conectados en el PCB.
+Para más detalles técnicos, ver `firmware/README.md` en el repositorio.

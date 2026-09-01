@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <heltec_unofficial.h>   // radio (SX1262), display (SSD1306Wire), button (HotButton)
+#include <heltec_unofficial.h>
 #include "images.h"
 #include "io.h"
 #include "master_config.h"
@@ -8,18 +8,16 @@
 #include "portal_master.h"
 #include "log.h"
 
-// Master IO - by Aysafi
-// LoRa <-> Modbus RTU gateway. Polls up to 8 adopted nodeIO nodes over LoRa and
-// exposes their analog/digital inputs (and relay outputs) as Modbus registers.
-// Node discovery + adoption is done from the captive portal.
 #define FW_VERSION "V1.2026.005-gw"
 
-enum Mode { MODE_NORMAL, MODE_PORTAL };
-static Mode     mode          = MODE_NORMAL;
-static uint32_t btn1DownSince = 0;
-static uint32_t lastDrawMs    = 0;
+enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_MENU, MODE_NODE_VIEW };
+static Mode     mode            = MODE_NORMAL;
+static uint32_t btn1DownSince   = 0;
+static uint32_t btn2DownSince   = 0;
+static uint32_t btnBuiltinDownSince = 0;
+static uint32_t lastDrawMs      = 0;
+static int      selectedNode    = 0;
 
-// ---------------------------------------------------------------------------
 static void splash() {
   display.clear();
   display.setFont(ArialMT_Plain_10);
@@ -36,7 +34,25 @@ static void splash() {
 
 static void enterPortal() {
   mode = MODE_PORTAL;
-  portalStart();               // LoRa stays up for discovery/adoption
+  portalStart();
+}
+
+static void enterMenu() {
+  mode = MODE_MENU;
+  selectedNode = 0;
+  lastDrawMs = 0;
+}
+
+static void enterNodeView(int nodeSlot) {
+  if (nodeSlot < 0 || nodeSlot >= MASTER_MAX_NODES) return;
+  mode = MODE_NODE_VIEW;
+  selectedNode = nodeSlot;
+  lastDrawMs = 0;
+}
+
+static void exitToNormal() {
+  mode = MODE_NORMAL;
+  lastDrawMs = 0;
 }
 
 static void drawPortalScreen() {
@@ -78,18 +94,179 @@ static void drawStatusScreen() {
   display.display();
 }
 
-// ---------------------------------------------------------------------------
+static void drawMenuScreen() {
+  if (millis() - lastDrawMs < 250) return;
+  lastDrawMs = millis();
+
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, "MENU NODOS");
+  display.drawString(0, 14, "-> Global");
+
+  uint8_t count = 0;
+  for (int i = 0; i < MASTER_MAX_NODES; i++) {
+    if (mcfg.nodes[i].addr && mcfg.nodes[i].enabled) {
+      count++;
+      char line[32];
+      snprintf(line, sizeof(line), "%s Nodo %u",
+               (count - 1 == selectedNode) ? ">" : " ",
+               mcfg.nodes[i].addr);
+      display.drawString(0, 14 + count * 14, line);
+    }
+  }
+
+  if (count == 0) {
+    display.drawString(0, 30, "Sin nodos adoptados");
+  }
+
+  display.drawString(0, 56, "[F1+F2]=Enter [F2]=Salir");
+  display.display();
+}
+
+static void drawNodeViewScreen() {
+  if (millis() - lastDrawMs < 250) return;
+  lastDrawMs = millis();
+
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+
+  char l[48];
+  snprintf(l, sizeof(l), "Nodo %u", mcfg.nodes[selectedNode].addr);
+  display.drawString(0, 0, l);
+
+  NodeSnapshot& s = snap[selectedNode];
+
+  snprintf(l, sizeof(l), "AI: %u %u %u %u", s.ai[0], s.ai[1], s.ai[2], s.ai[3]);
+  display.drawString(0, 12, l);
+
+  snprintf(l, sizeof(l), "DI: %u %u %u %u", s.di[0], s.di[1], s.di[2], s.di[3]);
+  display.drawString(0, 24, l);
+
+  snprintf(l, sizeof(l), "RO: %c %c %c %c", s.ro[0], s.ro[1], s.ro[2], s.ro[3]);
+  display.drawString(0, 36, l);
+
+  snprintf(l, sizeof(l), "RSSI: %d | %s", s.rssi, s.online ? "ON" : "OFF");
+  display.drawString(0, 48, l);
+
+  display.drawString(0, 56, "[F1/F2]=Nav [F2L]=Menu");
+  display.display();
+}
+
+static void handleButtonsNormal() {
+  bool btn1_pressed = digitalRead(PIN_BUTTON_1) == LOW;
+  bool btn2_pressed = digitalRead(PIN_BUTTON_2) == LOW;
+  bool btn_builtin_pressed = digitalRead(PIN_BUTTON_BUILTIN) == LOW;
+
+  if (btn_builtin_pressed) {
+    if (btnBuiltinDownSince == 0) btnBuiltinDownSince = millis();
+    else if (millis() - btnBuiltinDownSince > 5000) {
+      enterPortal();
+      return;
+    }
+  } else {
+    btnBuiltinDownSince = 0;
+  }
+
+  if (btn1_pressed) {
+    if (btn1DownSince == 0) btn1DownSince = millis();
+    else if (millis() - btn1DownSince > 5000 && millis() - btn1DownSince < 5100) {
+      // short press detected (released and re-checked to avoid double-trigger)
+    }
+  } else {
+    if (btn1DownSince > 0 && millis() - btn1DownSince < 5000) {
+      enterMenu();
+    }
+    btn1DownSince = 0;
+  }
+}
+
+static void handleButtonsMenu() {
+  bool btn1_pressed = digitalRead(PIN_BUTTON_1) == LOW;
+  bool btn2_pressed = digitalRead(PIN_BUTTON_2) == LOW;
+
+  if (btn1_pressed) {
+    if (btn1DownSince == 0) btn1DownSince = millis();
+  } else {
+    btn1DownSince = 0;
+  }
+
+  if (btn2_pressed) {
+    if (btn2DownSince == 0) btn2DownSince = millis();
+    else if (millis() - btn2DownSince > 3000) {
+      exitToNormal();
+      return;
+    }
+  } else {
+    if (btn2DownSince > 0 && millis() - btn2DownSince < 500) {
+      // short F2 press = exit to normal
+      exitToNormal();
+    }
+    btn2DownSince = 0;
+  }
+
+  // Both buttons pressed = enter node view
+  if (btn1_pressed && btn2_pressed) {
+    enterNodeView(selectedNode);
+    return;
+  }
+
+  // F1 only = navigate up in menu
+  if (btn1_pressed && !btn2_pressed && btn1DownSince > 0 && millis() - btn1DownSince > 300) {
+    selectedNode = (selectedNode - 1 + MASTER_MAX_NODES) % MASTER_MAX_NODES;
+    btn1DownSince = millis(); // debounce
+  }
+
+  // F2 only = navigate down in menu
+  if (btn2_pressed && !btn1_pressed && btn2DownSince > 0 && millis() - btn2DownSince > 300 && millis() - btn2DownSince < 3000) {
+    selectedNode = (selectedNode + 1) % MASTER_MAX_NODES;
+    btn2DownSince = millis(); // debounce
+  }
+}
+
+static void handleButtonsNodeView() {
+  bool btn1_pressed = digitalRead(PIN_BUTTON_1) == LOW;
+  bool btn2_pressed = digitalRead(PIN_BUTTON_2) == LOW;
+
+  if (btn1_pressed) {
+    if (btn1DownSince == 0) btn1DownSince = millis();
+  } else {
+    btn1DownSince = 0;
+  }
+
+  if (btn2_pressed) {
+    if (btn2DownSince == 0) btn2DownSince = millis();
+    else if (millis() - btn2DownSince > 3000) {
+      enterMenu();
+      return;
+    }
+  } else {
+    btn2DownSince = 0;
+  }
+
+  // F1 = prev node
+  if (btn1_pressed && !btn2_pressed && btn1DownSince > 0 && millis() - btn1DownSince > 300) {
+    selectedNode = (selectedNode - 1 + MASTER_MAX_NODES) % MASTER_MAX_NODES;
+    btn1DownSince = millis();
+  }
+
+  // F2 (short) = next node
+  if (btn2_pressed && !btn1_pressed && btn2DownSince > 0 && millis() - btn2DownSince > 300 && millis() - btn2DownSince < 3000) {
+    selectedNode = (selectedNode + 1) % MASTER_MAX_NODES;
+    btn2DownSince = millis();
+  }
+}
+
 void setup() {
   heltec_setup();
   masterConfigLoad();
   LOGLN("\nMaster IO gateway, by Aysafi " FW_VERSION);
 
-  ioInit(0x00, 0x00);          // buttons + safe relays; local IO read only if enabled
+  ioInit(0x00, 0x00);
   splash();
 
   if (mcfg.nodeCount == 0) {
     LOGLN("[cfg] sin nodos -> portal");
-    masterBegin();             // radio up so discovery works from the portal
+    masterBegin();
     enterPortal();
   } else if (!masterBegin()) {
     LOGLN("[lora] fallo de init -> portal");
@@ -104,21 +281,21 @@ void loop() {
   heltec_loop();
 
   if (mode == MODE_NORMAL) {
-    if (digitalRead(PIN_BUTTON_1) == LOW) {
-      if (btn1DownSince == 0) btn1DownSince = millis();
-      else if (millis() - btn1DownSince > 3000) { enterPortal(); return; }
-    } else {
-      btn1DownSince = 0;
-    }
+    handleButtonsNormal();
+    masterPollLoop();
+    modbusTask();
+    drawStatusScreen();
   }
-
-  if (mode == MODE_PORTAL) {
+  else if (mode == MODE_PORTAL) {
     portalLoop();
     drawPortalScreen();
-    return;
   }
-
-  masterPollLoop();
-  modbusTask();
-  drawStatusScreen();
+  else if (mode == MODE_MENU) {
+    handleButtonsMenu();
+    drawMenuScreen();
+  }
+  else if (mode == MODE_NODE_VIEW) {
+    handleButtonsNodeView();
+    drawNodeViewScreen();
+  }
 }
