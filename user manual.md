@@ -151,3 +151,53 @@ Secciones:
 | El PLC no lee nada | Slave ID / baud / paridad no coinciden; DE del RS-485 mal cableado; A/B invertidos |
 | Escribo una coil y el relé no cambia | el relé está deshabilitado en el nodo (bit `x` en Ireg `i*16+5`); o el nodo está offline |
 | Quiero mover un nodo a otro master | en este portal "Quitar" (envía RELEASE) y adóptalo en el otro |
+| El Master se reinicia al conectarse por Modbus (USB) | el cable USB / CP210x está toggling DTR/RTS, que resetea el ESP32. **Solución software**: la webapp debe abrir el puerto **con DTR=False y RTS=False** ANTES de `connect()`. Ver **§8. Pruebas Modbus**. **Solución hardware**: usa un cable USB sin DTR/RTS, o puentea el capacitor de reset (C9) de la placa. |
+
+---
+
+## 8. Pruebas Modbus
+
+El repositorio incluye scripts Python en `/tools/` para ejercitar el esclavo Modbus en banco, sin un PLC real. Requisitos:
+
+```sh
+pip install -r tools/requirements.txt   # pymodbus 3.5.0, pyserial 3.5
+```
+
+### Snapshots y monitoreo
+
+```sh
+# Lectura única de bloque global + 8 bloques de nodo
+python tools/mb_dump.py --port COM8
+
+# Monitor continuo (5 Hz)
+python tools/mb_watch.py --port COM8 --interval 1
+
+# Secuencia: close relé → pulse → open (en una conexión)
+python tools/mb_test.py --port COM8 --node 0 --relay 1 --poll-wait 2
+```
+
+### Escritura de relés
+
+```sh
+python tools/mb_relay.py --port COM8 --node 0 --relay 1 --on
+python tools/mb_relay.py --port COM8 --node 0 --relay 1 --off
+python tools/mb_relay.py --port COM8 --node 0 --relay 1 --pulse
+```
+
+Flags comunes: `--port`, `--baud` (def. 19200), `--parity {N,E,O}` (def. E=8E1), `--stopbits {1,2}`, `--slave` (def. 1), `--timeout` (def. 1.0).
+
+### DTR/RTS: la trampa silenciosa
+
+**El CP210x de USB resetea el ESP32 al abrir el puerto** si DTR/RTS va alto. Los scripts lo evitan:
+
+```python
+import serial
+ser = serial.Serial()
+ser.dtr = False   # ← CRÍTICO: ANTES de open()
+ser.rts = False
+ser.open()
+time.sleep(3)     # espera a que se estabilice
+ser.reset_input_buffer()
+```
+
+**Si tu webapp no lo hace**, el Master bootloops. Solución: aplica lo de arriba en tu cliente Modbus, o usa un cable USB que no tenga DTR/RTS conectados en el PCB.
