@@ -14,7 +14,7 @@ import argparse
 import sys
 import time
 
-from mb_lib import Gateway, add_serial_args, client_from_args
+from mb_lib import Gateway, add_serial_args, open_client
 
 
 def main() -> int:
@@ -29,11 +29,7 @@ def main() -> int:
     g.add_argument("--pulse", action="store_true")
     a = ap.parse_args()
 
-    c = client_from_args(a)
-    if not c.connect():
-        print(f"ERROR: cannot open {a.port}", file=sys.stderr)
-        return 2
-
+    c = open_client(a)
     gw = Gateway(c, a.slave)
     try:
         if a.pulse:

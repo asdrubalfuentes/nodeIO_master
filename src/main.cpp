@@ -12,7 +12,7 @@
 // LoRa <-> Modbus RTU gateway. Polls up to 8 adopted nodeIO nodes over LoRa and
 // exposes their analog/digital inputs (and relay outputs) as Modbus registers.
 // Node discovery + adoption is done from the captive portal.
-#define FW_VERSION "V1.2026.004-gw"
+#define FW_VERSION "V1.2026.005-gw"
 
 enum Mode { MODE_NORMAL, MODE_PORTAL };
 static Mode     mode          = MODE_NORMAL;

@@ -11,7 +11,7 @@ import sys
 import time
 from datetime import datetime
 
-from mb_lib import Gateway, add_serial_args, client_from_args
+from mb_lib import Gateway, add_serial_args, open_client
 
 
 def main() -> int:
@@ -22,11 +22,7 @@ def main() -> int:
     ap.add_argument("--no-clear", action="store_true", help="do not clear the screen")
     a = ap.parse_args()
 
-    c = client_from_args(a)
-    if not c.connect():
-        print(f"ERROR: cannot open {a.port}", file=sys.stderr)
-        return 2
-
+    c = open_client(a)
     gw = Gateway(c, a.slave)
     errs = 0
     try:

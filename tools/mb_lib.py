@@ -30,8 +30,11 @@ Register map (see src/modbus_gw.h and "user manual.md" section 4):
 from __future__ import annotations
 
 import argparse
+import sys
+import time
 from dataclasses import dataclass, field
 
+import serial as pyserial
 from pymodbus.client import ModbusSerialClient
 
 MAX_NODES = 8
@@ -58,6 +61,10 @@ def add_serial_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--stopbits", type=int, default=1, choices=[1, 2])
     ap.add_argument("--slave", type=int, default=1, help="Modbus slave id (default 1)")
     ap.add_argument("--timeout", type=float, default=1.0)
+    ap.add_argument("--settle", type=float, default=3.0,
+                    help="seconds to wait after opening the port before talking "
+                         "Modbus, so a reset + LoRa re-acquire can finish "
+                         "(default 3.0)")
 
 
 def client_from_args(a: argparse.Namespace) -> ModbusSerialClient:
@@ -69,6 +76,43 @@ def client_from_args(a: argparse.Namespace) -> ModbusSerialClient:
         stopbits=a.stopbits,
         timeout=a.timeout,
     )
+
+
+def open_client(a: argparse.Namespace) -> ModbusSerialClient:
+    """Open the port with DTR/RTS held low so the CP210x auto-reset circuit
+    doesn't reboot the ESP32 on connect, hand the serial object to pymodbus,
+    then wait out any reset that still slipped through."""
+    c = client_from_args(a)
+    ser = pyserial.Serial()
+    ser.port = a.port
+    ser.baudrate = a.baud
+    ser.bytesize = 8
+    ser.parity = a.parity
+    ser.stopbits = a.stopbits
+    ser.timeout = a.timeout
+    ser.dtr = False
+    ser.rts = False
+    try:
+        ser.open()
+    except Exception as e:
+        print(f"ERROR: cannot open {a.port}: {e}", file=sys.stderr)
+        raise SystemExit(2)
+    for _ in range(2):
+        try:
+            ser.dtr = False
+            ser.rts = False
+        except Exception:
+            pass
+    c.socket = ser  # pymodbus.connect() is now a no-op; it uses this socket
+
+    settle = getattr(a, "settle", 3.0)
+    if settle > 0:
+        time.sleep(settle)
+    try:
+        ser.reset_input_buffer()
+    except Exception:
+        pass
+    return c
 
 
 # ----------------------------------------------------------------------- decode
@@ -108,41 +152,50 @@ class GlobalView:
 
 
 class Gateway:
-    def __init__(self, client: ModbusSerialClient, slave: int = 1):
+    def __init__(self, client: ModbusSerialClient, slave: int = 1, retries: int = 3):
         self.c = client
         self.slave = slave
+        self.retries = retries
+
+    def _do(self, label: str, fn):
+        last = None
+        for attempt in range(self.retries):
+            try:
+                rr = fn()
+                if not rr.isError():
+                    return rr
+                last = rr
+            except Exception as e:  # transport hiccup during a board reset
+                last = e
+            time.sleep(0.3)
+        raise IOError(f"{label} -> {last}")
 
     # -- raw reads -------------------------------------------------------
     def _iregs(self, addr: int, count: int) -> list[int]:
-        rr = self.c.read_input_registers(addr, count, slave=self.slave)
-        if rr.isError():
-            raise IOError(f"read_input_registers({addr},{count}) -> {rr}")
+        rr = self._do(f"read_input_registers({addr},{count})",
+                      lambda: self.c.read_input_registers(addr, count, slave=self.slave))
         return list(rr.registers)
 
     def _discretes(self, addr: int, count: int) -> list[int]:
-        rr = self.c.read_discrete_inputs(addr, count, slave=self.slave)
-        if rr.isError():
-            raise IOError(f"read_discrete_inputs({addr},{count}) -> {rr}")
+        rr = self._do(f"read_discrete_inputs({addr},{count})",
+                      lambda: self.c.read_discrete_inputs(addr, count, slave=self.slave))
         return [int(b) for b in rr.bits[:count]]
 
     def _coils(self, addr: int, count: int) -> list[int]:
-        rr = self.c.read_coils(addr, count, slave=self.slave)
-        if rr.isError():
-            raise IOError(f"read_coils({addr},{count}) -> {rr}")
+        rr = self._do(f"read_coils({addr},{count})",
+                      lambda: self.c.read_coils(addr, count, slave=self.slave))
         return [int(b) for b in rr.bits[:count]]
 
     # -- writes -------------------------------------------------------
     def set_relay(self, slot: int, relay1: int, on: bool) -> None:
         addr = slot * NODE_BLK + (relay1 - 1)
-        rr = self.c.write_coil(addr, bool(on), slave=self.slave)
-        if rr.isError():
-            raise IOError(f"write_coil({addr},{on}) -> {rr}")
+        self._do(f"write_coil({addr},{on})",
+                 lambda: self.c.write_coil(addr, bool(on), slave=self.slave))
 
     def pulse_relay(self, slot: int, relay1: int) -> None:
         addr = slot * NODE_BLK + 4 + (relay1 - 1)
-        rr = self.c.write_coil(addr, True, slave=self.slave)
-        if rr.isError():
-            raise IOError(f"write_coil({addr},pulse) -> {rr}")
+        self._do(f"write_coil({addr},pulse)",
+                 lambda: self.c.write_coil(addr, True, slave=self.slave))
 
     # -- decoded views -------------------------------------------------
     def node(self, slot: int, with_bits: bool = True) -> NodeView:

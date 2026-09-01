@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 
 import mb_lib
-from mb_lib import Gateway, add_serial_args, client_from_args
+from mb_lib import Gateway, add_serial_args, open_client
 
 
 def fmt_bits(bits: list[int]) -> str:
@@ -26,11 +26,7 @@ def main() -> int:
     ap.add_argument("--raw", action="store_true", help="also dump raw input registers")
     a = ap.parse_args()
 
-    c = client_from_args(a)
-    if not c.connect():
-        print(f"ERROR: cannot open {a.port}", file=sys.stderr)
-        return 2
-
+    c = open_client(a)
     gw = Gateway(c, a.slave)
     try:
         print(f"# {datetime.now():%Y-%m-%d %H:%M:%S}  {a.port} "

@@ -27,7 +27,8 @@ static uint16_t onNodeCoil(TRegister* reg, uint16_t val) {
     masterQueueRelays(slot, want);
   } else if (k < 8) {                // pulse trigger
     if (val) masterQueuePulse(slot, (k - 4) + 1, mcfg.pulseMs);
-    return 0;                        // self-clearing
+    return val;                      // accept the write (FC05 echoes it);
+                                     // publish() clears it on the next cycle
   }
   return val;
 }
@@ -83,6 +84,9 @@ static void publish() {
     uint16_t b = i * NODE_BLK;
     MasterNode&   nd = mcfg.nodes[i];
     NodeSnapshot& s  = snap[i];
+
+    for (uint16_t k = 4; k < 8; k++)         // self-clear pulse-trigger coils
+      if (mb.Coil(b + k)) mb.Coil(b + k, false);
 
     mb.Ireg(b + 9, nd.addr);
     if (!nd.addr) {
