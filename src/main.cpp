@@ -101,25 +101,36 @@ static void drawMenuScreen() {
   display.clear();
   display.setFont(ArialMT_Plain_10);
   display.drawString(0, 0, "MENU NODOS");
-  display.drawString(0, 14, "-> Global");
 
-  uint8_t count = 0;
+  char l[48];
+  int adoptedCount = 0, adoptedNodes[MASTER_MAX_NODES];
   for (int i = 0; i < MASTER_MAX_NODES; i++) {
     if (mcfg.nodes[i].addr && mcfg.nodes[i].enabled) {
-      count++;
-      char line[32];
-      snprintf(line, sizeof(line), "%s Nodo %u",
-               (count - 1 == selectedNode) ? ">" : " ",
-               mcfg.nodes[i].addr);
-      display.drawString(0, 14 + count * 14, line);
+      adoptedNodes[adoptedCount++] = i;
     }
   }
 
-  if (count == 0) {
-    display.drawString(0, 30, "Sin nodos adoptados");
+  if (adoptedCount == 0) {
+    display.drawString(0, 20, "Sin nodos adoptados");
+    display.display();
+    return;
   }
 
-  display.drawString(0, 56, "[F1+F2]=Enter [F2]=Salir");
+  int menuPos = 0;
+  for (int j = 0; j < adoptedCount; j++) {
+    if (adoptedNodes[j] == selectedNode) { menuPos = j; break; }
+  }
+
+  snprintf(l, sizeof(l), "%s Global", menuPos == -1 ? ">" : " ");
+  display.drawString(0, 14, l);
+
+  for (int j = 0; j < adoptedCount && j < 3; j++) {
+    int i = adoptedNodes[j];
+    snprintf(l, sizeof(l), "%s Nodo %u", (menuPos == j) ? ">" : " ", mcfg.nodes[i].addr);
+    display.drawString(0, 28 + j * 12, l);
+  }
+
+  display.drawString(0, 56, "[F1+F2]=Sel [F2]=Exit");
   display.display();
 }
 
@@ -198,28 +209,53 @@ static void handleButtonsMenu() {
     }
   } else {
     if (btn2DownSince > 0 && millis() - btn2DownSince < 500) {
-      // short F2 press = exit to normal
       exitToNormal();
     }
     btn2DownSince = 0;
   }
 
-  // Both buttons pressed = enter node view
+  // Both buttons = enter node view
   if (btn1_pressed && btn2_pressed) {
     enterNodeView(selectedNode);
     return;
   }
 
-  // F1 only = navigate up in menu
-  if (btn1_pressed && !btn2_pressed && btn1DownSince > 0 && millis() - btn1DownSince > 300) {
-    selectedNode = (selectedNode - 1 + MASTER_MAX_NODES) % MASTER_MAX_NODES;
-    btn1DownSince = millis(); // debounce
+  // Collect adopted nodes
+  int adoptedCount = 0, adoptedNodes[MASTER_MAX_NODES];
+  for (int i = 0; i < MASTER_MAX_NODES; i++) {
+    if (mcfg.nodes[i].addr && mcfg.nodes[i].enabled) {
+      adoptedNodes[adoptedCount++] = i;
+    }
   }
 
-  // F2 only = navigate down in menu
+  if (adoptedCount == 0) return;
+
+  // Find current position
+  int menuPos = -1;
+  for (int j = 0; j < adoptedCount; j++) {
+    if (adoptedNodes[j] == selectedNode) { menuPos = j; break; }
+  }
+
+  // F1 only = prev node
+  if (btn1_pressed && !btn2_pressed && btn1DownSince > 0 && millis() - btn1DownSince > 300) {
+    if (menuPos >= 0) {
+      menuPos = (menuPos - 1 + adoptedCount) % adoptedCount;
+    } else {
+      menuPos = adoptedCount - 1;
+    }
+    selectedNode = adoptedNodes[menuPos];
+    btn1DownSince = millis();
+  }
+
+  // F2 only = next node
   if (btn2_pressed && !btn1_pressed && btn2DownSince > 0 && millis() - btn2DownSince > 300 && millis() - btn2DownSince < 3000) {
-    selectedNode = (selectedNode + 1) % MASTER_MAX_NODES;
-    btn2DownSince = millis(); // debounce
+    if (menuPos >= 0) {
+      menuPos = (menuPos + 1) % adoptedCount;
+    } else {
+      menuPos = 0;
+    }
+    selectedNode = adoptedNodes[menuPos];
+    btn2DownSince = millis();
   }
 }
 
@@ -243,15 +279,36 @@ static void handleButtonsNodeView() {
     btn2DownSince = 0;
   }
 
+  // Collect adopted nodes
+  int adoptedCount = 0, adoptedNodes[MASTER_MAX_NODES];
+  for (int i = 0; i < MASTER_MAX_NODES; i++) {
+    if (mcfg.nodes[i].addr && mcfg.nodes[i].enabled) {
+      adoptedNodes[adoptedCount++] = i;
+    }
+  }
+
+  if (adoptedCount == 0) {
+    exitToNormal();
+    return;
+  }
+
+  // Find current position
+  int nodePos = -1;
+  for (int j = 0; j < adoptedCount; j++) {
+    if (adoptedNodes[j] == selectedNode) { nodePos = j; break; }
+  }
+
   // F1 = prev node
   if (btn1_pressed && !btn2_pressed && btn1DownSince > 0 && millis() - btn1DownSince > 300) {
-    selectedNode = (selectedNode - 1 + MASTER_MAX_NODES) % MASTER_MAX_NODES;
+    nodePos = (nodePos - 1 + adoptedCount) % adoptedCount;
+    selectedNode = adoptedNodes[nodePos];
     btn1DownSince = millis();
   }
 
   // F2 (short) = next node
   if (btn2_pressed && !btn1_pressed && btn2DownSince > 0 && millis() - btn2DownSince > 300 && millis() - btn2DownSince < 3000) {
-    selectedNode = (selectedNode + 1) % MASTER_MAX_NODES;
+    nodePos = (nodePos + 1) % adoptedCount;
+    selectedNode = adoptedNodes[nodePos];
     btn2DownSince = millis();
   }
 }
