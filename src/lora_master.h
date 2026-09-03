@@ -36,3 +36,8 @@ void masterQueuePulse(int slot, uint8_t idx1, uint16_t ms);
 uint8_t masterDiscover(uint16_t windowMs = 4000);           // fills discovered[], returns count
 bool    masterAdopt(const char* mac, uint8_t addr, const char* name);
 bool    masterRelease(int slot);
+
+// ROLLCALL: reconstruye la tabla de nodos desde el campo (nodos ya adoptados que
+// responden HERE). Uso: al arrancar con la tabla vacia, o desde el portal.
+// Devuelve cuantos nodos se incorporaron. Persiste si incorpora alguno.
+uint8_t masterRollcall(uint16_t windowMs = 4000);

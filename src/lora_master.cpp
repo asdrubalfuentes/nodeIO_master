@@ -75,6 +75,31 @@ static void parseStatus(int slot, char*& save) {
   for (uint8_t i = 0; i < 4; i++) { char* o = strtok_r(nullptr, ",", &save); s.ro[i] = o ? o[0] : 'x'; }
 }
 
+// Incorpora un nodo a partir de una linea HERE ya tokenizada hasta "HERE".
+// El siguiente token es <mac>, luego <addr>, luego <masterAddr>. Solo absorbe
+// nodos que dicen pertenecer a este gateway (o a "cualquiera"). Devuelve true si
+// lo agrego a la tabla.
+static bool absorbHere(char*& save) {
+  char* mac   = strtok_r(nullptr, ",", &save);
+  char* addr  = strtok_r(nullptr, ",", &save);
+  char* maddr = strtok_r(nullptr, ",", &save);
+  if (!mac || !addr) return false;
+
+  uint8_t a       = (uint8_t)atoi(addr);
+  uint8_t claimed = maddr ? (uint8_t)atoi(maddr) : 0;
+  if (claimed != 0 && claimed != mcfg.masterLoraAddr) return false;  // de otro maestro
+  if (masterFindByMac(mac) >= 0) return false;                       // ya en la tabla
+  if (!masterAddrFree(a)) return false;                              // direccion ocupada
+
+  char nm[16];
+  snprintf(nm, sizeof(nm), "Nodo %u", a);
+  int slot = masterAddNode(a, mac, nm);
+  if (slot < 0) return false;
+  snap[slot] = NodeSnapshot{};
+  LOGF("[rollcall] + nodo addr %u mac %s\n", a, mac);
+  return true;
+}
+
 static void dispatchReply(char* text) {
   char* save = nullptr;
   char* t_dst  = strtok_r(text, ",", &save);
@@ -82,6 +107,13 @@ static void dispatchReply(char* text) {
   strtok_r(nullptr, ",", &save);                  // seq (unused)
   char* t_resp = strtok_r(nullptr, ",", &save);
   if (!t_dst || !t_src || !t_resp) return;
+
+  // Baliza HERE no solicitada (nodo adoptado que se anuncia): va a dst 255.
+  if (!strcmp(t_resp, "HERE")) {
+    if (absorbHere(save)) masterConfigSave();
+    return;
+  }
+
   if ((uint8_t)atoi(t_dst) != mcfg.masterLoraAddr) return;
 
   int slot = masterFindByAddr((uint8_t)atoi(t_src));
@@ -249,4 +281,28 @@ bool masterRelease(int slot) {
   masterRemoveNode(slot);
   masterConfigSave();
   return true;
+}
+
+uint8_t masterRollcall(uint16_t windowMs) {
+  uint8_t added = 0;
+  for (int attempt = 0; attempt < 3; attempt++) {
+    sendFrame(BCAST, "ROLLCALL");
+    uint32_t t0 = millis();
+    while (millis() - t0 < windowMs) {
+      char text[220];
+      int L = readFrameNow(text, sizeof(text));
+      if (L <= 0) { delay(2); continue; }
+
+      char* save = nullptr;
+      strtok_r(text, ",", &save);                 // dst
+      strtok_r(nullptr, ",", &save);              // src
+      strtok_r(nullptr, ",", &save);              // seq
+      char* resp = strtok_r(nullptr, ",", &save);
+      if (!resp || strcmp(resp, "HERE")) continue;
+      if (absorbHere(save)) added++;
+    }
+  }
+  if (added) masterConfigSave();
+  LOGF("[rollcall] %u nodo(s) incorporados\n", added);
+  return added;
 }

@@ -4,11 +4,15 @@
 MasterConfig mcfg;
 
 static const char*    NVS_NS    = "masterio";
-static const uint32_t CFG_MAGIC = 0xA75A3E02;   // bump on struct layout change
+static const uint32_t CFG_MAGIC = 0xA75A3E03;   // bump on struct layout change
+                                                // 03: + mbTransport/mbTcpPort + WiFi STA (Modbus TCP)
 
 void masterConfigFactory() {
   mcfg = MasterConfig{};
   mcfg.masterLoraAddr = 200;
+
+  mcfg.mbTransport = MBT_TCP;      // por defecto Modbus TCP (el LOGO! 9 no tiene serie)
+  mcfg.mbTcpPort   = 502;
 
   mcfg.mbSlaveId = 1;
   mcfg.mbBaud    = 19200;
@@ -17,6 +21,12 @@ void masterConfigFactory() {
   mcfg.mbRxPin   = 44;            // U0RXD  (RS-485 carrier default was 2/3/4)
   mcfg.mbTxPin   = 43;            // U0TXD
   mcfg.mbDePin   = -1;           // direct link, no RS-485 direction control
+
+  mcfg.staEnabled = false;
+  mcfg.staSsid[0] = '\0';
+  mcfg.staPass[0] = '\0';
+  mcfg.staStatic  = false;
+  mcfg.staIp = mcfg.staGw = mcfg.staMask = 0;
 
   mcfg.loraFreq  = 915.0f;
   mcfg.loraBw    = 125.0f;

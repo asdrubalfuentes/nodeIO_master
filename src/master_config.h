@@ -3,6 +3,12 @@
 
 #define MASTER_MAX_NODES  8
 
+// Transporte Modbus del gateway (contrato ORCHESTRATION/REGISTER_MAP.md: MAPA A).
+// El LOGO! 9 / PLC-SIM lo sondea por Modbus TCP :502. RS-485 queda de respaldo.
+#define MBT_RTU   0
+#define MBT_TCP   1
+#define MBT_BOTH  2
+
 struct MasterNode {
   uint8_t addr;         // LoRa address assigned to this node (0 = empty slot)
   char    mac[13];      // node idUnico (12 hex) + NUL
@@ -14,13 +20,24 @@ struct MasterNode {
 struct MasterConfig {
   uint8_t  masterLoraAddr;              // this gateway's LoRa src address (default 200)
 
-  // --- Modbus RTU (serial) ---
-  uint8_t  mbSlaveId;                   // default 1
+  // --- Modbus: transporte ---
+  uint8_t  mbTransport;                 // MBT_RTU / MBT_TCP / MBT_BOTH  (default MBT_TCP)
+  uint16_t mbTcpPort;                   // servidor Modbus TCP (default 502)
+
+  // --- Modbus RTU (serial, respaldo de banco) ---
+  uint8_t  mbSlaveId;                   // default 1 (tambien Unit ID del servidor TCP)
   uint32_t mbBaud;                      // default 19200
   uint8_t  mbFormat;                    // 0=8N1 1=8E1 2=8O1 3=8N2 4=8E2 5=8O2  (default 1)
   int8_t   mbRxPin, mbTxPin, mbDePin;   // RS-485 mode: default 2, 3, 4 ; DE = -1 -> no direction control
   bool     mbUsb;                       // true -> Modbus runs on Serial (UART0, GPIO43/44 = USB);
                                         //         console logging is suppressed, DE ignored. (default true)
+
+  // --- WiFi STA: une el gateway al segmento de planta para Modbus TCP ---
+  bool     staEnabled;                  // default false
+  char     staSsid[33];
+  char     staPass[65];
+  bool     staStatic;                  // false -> DHCP
+  uint32_t staIp, staGw, staMask;      // solo si staStatic (0 = sin definir)
 
   // --- LoRa channel (authoritative; pushed to nodes on ADOPT) ---
   float    loraFreq, loraBw;            // 915.0 / 125.0

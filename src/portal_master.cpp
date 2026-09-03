@@ -13,15 +13,27 @@ static WebServer  web(80);
 static const byte DNS_PORT = 53;
 
 static const char* FMT_NAMES[6] = { "8N1", "8E1", "8O1", "8N2", "8E2", "8O2" };
+static const char* MBT_NAMES[3] = { "RTU (RS-485/USB)", "TCP :502 (WiFi)", "Ambos" };
 
 // --------------------------------------------------------------------------
 static String opt(int v, int cur, const char* label) {
   return "<option value=" + String(v) + (v == cur ? " selected" : "") + ">" + label + "</option>";
 }
 
+static String ipToStr(uint32_t v) {
+  if (!v) return "";
+  return String(v & 0xFF) + "." + String((v >> 8) & 0xFF) + "." +
+         String((v >> 16) & 0xFF) + "." + String((v >> 24) & 0xFF);
+}
+
+static uint32_t strToIp(const String& s) {
+  IPAddress ip;
+  return ip.fromString(s) ? (uint32_t)ip : 0;
+}
+
 static String buildPage() {
   String h;
-  h.reserve(6144);
+  h.reserve(8192);
   h += F("<!doctype html><html><head><meta charset=utf-8>"
          "<meta name=viewport content='width=device-width,initial-scale=1'>"
          "<title>Master IO - Config</title><style>"
@@ -59,7 +71,10 @@ static String buildPage() {
 
   // ---- discovery ----
   h += F("<h2>Descubrir nodos</h2>"
-         "<form method=post action=/scan><button class=big>Buscar nodos sin adoptar</button></form>");
+         "<form method=post action=/scan><button class=big>Buscar nodos sin adoptar</button></form>"
+         "<form method=post action=/rollcall><button class=big>Reconstruir tabla desde el campo (ROLLCALL)</button></form>"
+         "<p style=color:#999>ROLLCALL: recupera nodos <b>ya adoptados</b> por este gateway "
+         "sin re-adoptarlos. Util tras borrar la NVS o actualizar el firmware.</p>");
   if (discoveredCount > 0) {
     h += "<table><tr><th>MAC</th><th>FW</th><th>Direcci&oacute;n</th><th>Nombre</th><th></th></tr>";
     for (uint8_t i = 0; i < discoveredCount; i++) {
@@ -89,13 +104,32 @@ static String buildPage() {
   h += "<div><label>Timeout ACK ms</label><input name=ackms type=number min=50 max=10000 value=" + String(mcfg.ackTimeoutMs) + "></div>";
   h += "<div><label>Fallos->OFFLINE</label><input name=offa type=number min=1 max=20 value=" + String(mcfg.offlineAfter) + "></div>";
   h += "<div><label>Pulso ms (coil)</label><input name=pulms type=number min=10 max=60000 value=" + String(mcfg.pulseMs) + "></div></div>";
-  h += F("</fieldset><fieldset><legend>Modbus RTU</legend>");
+  h += F("</fieldset><fieldset><legend>Modbus &mdash; transporte</legend>");
+  h += "<label>Transporte (MAPA A hacia el LOGO! 9 / PLC-SIM)</label><select name=mbtr>";
+  for (int t = 0; t < 3; t++) h += opt(t, mcfg.mbTransport, MBT_NAMES[t]);
+  h += "</select>";
+  h += "<div class=row><div><label>Unit ID (comun a RTU y TCP)</label>"
+       "<input name=mbid type=number min=1 max=247 value=" + String(mcfg.mbSlaveId) + "></div>";
+  h += "<div><label>Puerto TCP</label><input name=mbtcpport type=number min=1 max=65535 value=" +
+       String(mcfg.mbTcpPort ? mcfg.mbTcpPort : 502) + "></div></div>";
+
+  h += F("</fieldset><fieldset><legend>WiFi de planta (STA, para Modbus TCP)</legend>"
+         "<label><input type=checkbox name=staen style=width:auto");
+  h += String(mcfg.staEnabled ? " checked" : "") + "> Conectar a la WiFi de planta en modo normal";
+  h += "<label>SSID</label><input name=stassid maxlength=32 value='" + String(mcfg.staSsid) + "'>";
+  h += "<label>Clave</label><input name=stapass maxlength=64 value='" + String(mcfg.staPass) + "'>";
+  h += F("<label><input type=checkbox name=stastatic style=width:auto");
+  h += String(mcfg.staStatic ? " checked" : "") + "> IP fija (vac&iacute;o = DHCP)";
+  h += "<div class=row><div><label>IP</label><input name=staip value='" + ipToStr(mcfg.staIp) + "'></div>";
+  h += "<div><label>Gateway</label><input name=stagw value='" + ipToStr(mcfg.staGw) + "'></div>";
+  h += "<div><label>M&aacute;scara</label><input name=stamask value='" + ipToStr(mcfg.staMask) + "'></div></div>";
+
+  h += F("</fieldset><fieldset><legend>Modbus RTU (respaldo de banco)</legend>");
   h += "<label><input type=checkbox name=mbusb style=width:auto" +
        String(mcfg.mbUsb ? " checked" : "") +
        "> Salir por USB (UART0 GPIO43/44) &mdash; desactiva la consola de log. "
        "Sin marcar = RS-485 por Serial1 con los pines de abajo.</label>";
-  h += "<div class=row><div><label>Slave ID</label><input name=mbid type=number min=1 max=247 value=" + String(mcfg.mbSlaveId) + "></div>";
-  h += "<div><label>Baud</label><input name=mbbaud type=number value=" + String(mcfg.mbBaud) + "></div>";
+  h += "<div class=row><div><label>Baud</label><input name=mbbaud type=number value=" + String(mcfg.mbBaud) + "></div>";
   h += "<div><label>Formato</label><select name=mbfmt>";
   for (int f = 0; f < 6; f++) h += opt(f, mcfg.mbFormat, FMT_NAMES[f]);
   h += "</select></div></div>";
@@ -140,6 +174,10 @@ static void handleSave() {
   mcfg.offlineAfter = (uint8_t)constrain(argL("offa", mcfg.offlineAfter), 1, 20);
   mcfg.pulseMs      = (uint16_t)constrain(argL("pulms", mcfg.pulseMs), 10, 60000);
 
+  mcfg.mbTransport = (uint8_t)constrain(argL("mbtr", mcfg.mbTransport), 0, 2);
+  mcfg.mbTcpPort   = (uint16_t)constrain(
+      argL("mbtcpport", mcfg.mbTcpPort ? mcfg.mbTcpPort : 502), 1, 65535);
+
   mcfg.mbUsb     = web.hasArg("mbusb");
   mcfg.mbSlaveId = (uint8_t)constrain(argL("mbid", mcfg.mbSlaveId), 1, 247);
   mcfg.mbBaud    = (uint32_t)argL("mbbaud", mcfg.mbBaud);
@@ -147,6 +185,14 @@ static void handleSave() {
   mcfg.mbRxPin   = (int8_t)argL("mbrx", mcfg.mbRxPin);
   mcfg.mbTxPin   = (int8_t)argL("mbtx", mcfg.mbTxPin);
   mcfg.mbDePin   = (int8_t)argL("mbde", mcfg.mbDePin);
+
+  mcfg.staEnabled = web.hasArg("staen");
+  if (web.hasArg("stassid")) web.arg("stassid").toCharArray(mcfg.staSsid, sizeof(mcfg.staSsid));
+  if (web.hasArg("stapass")) web.arg("stapass").toCharArray(mcfg.staPass, sizeof(mcfg.staPass));
+  mcfg.staStatic = web.hasArg("stastatic");
+  mcfg.staIp   = strToIp(web.arg("staip"));
+  mcfg.staGw   = strToIp(web.arg("stagw"));
+  mcfg.staMask = strToIp(web.arg("stamask"));
 
   mcfg.localIoEnabled = web.hasArg("locio");
   web.arg("apssid").toCharArray(mcfg.apSsid, sizeof(mcfg.apSsid));
@@ -163,6 +209,12 @@ static void handleSave() {
 static void handleScan() {
   uint8_t n = masterDiscover();
   LOGF("[portal] discover -> %u nodo(s)\n", n);
+  redirectHome();
+}
+
+static void handleRollcall() {
+  uint8_t n = masterRollcall();
+  LOGF("[portal] rollcall -> +%u nodo(s)\n", n);
   redirectHome();
 }
 
@@ -203,8 +255,9 @@ void portalStart() {
 
   web.on("/", handleRoot);
   web.on("/save",   HTTP_POST, handleSave);
-  web.on("/scan",   HTTP_POST, handleScan);
-  web.on("/adopt",  HTTP_POST, handleAdopt);
+  web.on("/scan",     HTTP_POST, handleScan);
+  web.on("/rollcall", HTTP_POST, handleRollcall);
+  web.on("/adopt",    HTTP_POST, handleAdopt);
   web.on("/remove", HTTP_POST, handleRemove);
   web.on("/toggle", HTTP_POST, handleToggle);
   web.on("/generate_204", redirectHome);

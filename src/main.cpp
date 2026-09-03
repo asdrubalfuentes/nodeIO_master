@@ -5,10 +5,11 @@
 #include "master_config.h"
 #include "lora_master.h"
 #include "modbus_gw.h"
+#include "net_master.h"
 #include "portal_master.h"
 #include "log.h"
 
-#define FW_VERSION "V1.2026.005-gw"
+#define FW_VERSION "V1.2026.006-gw"   // + Modbus TCP/WiFi STA + ROLLCALL
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_MENU, MODE_NODE_VIEW };
 static Mode     mode            = MODE_NORMAL;
@@ -84,9 +85,17 @@ static void drawStatusScreen() {
   display.drawString(0, 0, "MASTER IO / gateway");
   snprintf(l, sizeof(l), "Nodos online %u/%u", online, mcfg.nodeCount);
   display.drawString(0, 14, l);
-  snprintf(l, sizeof(l), "Modbus %u @ %lu %s", mcfg.mbSlaveId,
-           (unsigned long)mcfg.mbBaud,
-           mcfg.mbUsb ? "usb" : (mcfg.mbDePin >= 0 ? "485" : "ttl"));
+  if (mcfg.mbTransport == MBT_RTU) {
+    snprintf(l, sizeof(l), "Modbus RTU %u @ %lu %s", mcfg.mbSlaveId,
+             (unsigned long)mcfg.mbBaud,
+             mcfg.mbUsb ? "usb" : (mcfg.mbDePin >= 0 ? "485" : "ttl"));
+  } else if (netStaUp()) {
+    snprintf(l, sizeof(l), "TCP %s:%u", netStaIp().c_str(),
+             mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
+  } else {
+    snprintf(l, sizeof(l), "TCP :%u  wifi...",
+             mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
+  }
   display.drawString(0, 28, l);
   if (lastAddr) snprintf(l, sizeof(l), "ult. addr %u rssi %d", lastAddr, lastRssi);
   else          snprintf(l, sizeof(l), "sin respuestas aun");
@@ -321,17 +330,27 @@ void setup() {
   ioInit(0x00, 0x00);
   splash();
 
-  if (mcfg.nodeCount == 0) {
-    LOGLN("[cfg] sin nodos -> portal");
-    masterBegin();
-    enterPortal();
-  } else if (!masterBegin()) {
+  if (!masterBegin()) {
     LOGLN("[lora] fallo de init -> portal");
     enterPortal();
-  } else {
-    modbusBegin();
-    mode = MODE_NORMAL;
+    return;
   }
+
+  if (mcfg.nodeCount == 0) {
+    // Tabla vacia (primer arranque, NVS borrada o firmware nuevo): antes de ir
+    // al portal, intenta reconstruirla desde el campo con ROLLCALL.
+    LOGLN("[cfg] sin nodos -> ROLLCALL");
+    if (masterRollcall() == 0) {
+      LOGLN("[cfg] ROLLCALL vacio -> portal");
+      enterPortal();
+      return;
+    }
+    LOGF("[cfg] ROLLCALL recupero %u nodo(s)\n", mcfg.nodeCount);
+  }
+
+  netBegin();            // WiFi STA (si esta habilitada) para Modbus TCP
+  modbusBegin();
+  mode = MODE_NORMAL;
 }
 
 void loop() {
@@ -339,6 +358,7 @@ void loop() {
 
   if (mode == MODE_NORMAL) {
     handleButtonsNormal();
+    netLoop();
     masterPollLoop();
     modbusTask();
     drawStatusScreen();

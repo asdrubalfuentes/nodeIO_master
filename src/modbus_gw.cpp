@@ -1,34 +1,43 @@
 #include "modbus_gw.h"
 #include "master_config.h"
 #include "lora_master.h"
+#include "net_master.h"
 #include "io.h"
 #include "log.h"
 #include <ModbusRTU.h>
+#include <ModbusIP_ESP8266.h>
 
-static ModbusRTU mb;
+// Dos backends con la MISMA API (ModbusAPI<T>): el mapa y la publicacion se
+// escriben una vez con plantillas y se aplican al/los transporte(s) activo(s).
+// MAPA A del contrato ORCHESTRATION/REGISTER_MAP.md  (CONTRACT_VERSION 1).
+static ModbusRTU mbRtu;
+static ModbusIP  mbTcp;
+
+static bool rtuOn = false, tcpOn = false, tcpStarted = false;
 
 static const uint16_t NODE_BLK   = 16;
 static const uint16_t GLOBAL_BASE = 900;   // Input Reg 900..915
 static const uint16_t LOCAL_COIL  = 900;   // Coil 900..903
 
-// ---- write callbacks ------------------------------------------------
+// Sombra de la consigna de reles por nodo. Evita depender de "que instancia"
+// recibio la escritura cuando hay dos backends activos.
+static bool relaySet[MASTER_MAX_NODES][4] = {};
+
+// ---- write callbacks ----------------------------------------------------
 static uint16_t onNodeCoil(TRegister* reg, uint16_t val) {
   uint16_t off  = reg->address.address;
   int      slot = off / NODE_BLK;
   uint16_t k    = off % NODE_BLK;
   if (slot < 0 || slot >= MASTER_MAX_NODES || !mcfg.nodes[slot].addr) return val;
 
-  if (k < 4) {                       // relay setpoint -> absolute WR of all 4
+  if (k < 4) {                       // consigna de rele -> WR absoluto de los 4
+    relaySet[slot][k] = (val != 0);
     char want[4];
-    for (uint16_t j = 0; j < 4; j++) {
-      bool on = (j == k) ? (val != 0) : (mb.Coil(slot * NODE_BLK + j));
-      want[j] = on ? '1' : '0';
-    }
+    for (uint16_t j = 0; j < 4; j++) want[j] = relaySet[slot][j] ? '1' : '0';
     masterQueueRelays(slot, want);
-  } else if (k < 8) {                // pulse trigger
+  } else if (k < 8) {                // disparo de pulso
     if (val) masterQueuePulse(slot, (k - 4) + 1, mcfg.pulseMs);
-    return val;                      // accept the write (FC05 echoes it);
-                                     // publish() clears it on the next cycle
+    return val;                      // publish() lo limpia en el siguiente ciclo
   }
   return val;
 }
@@ -40,24 +49,9 @@ static uint16_t onLocalCoil(TRegister* reg, uint16_t val) {
   return val;
 }
 
-// ---- setup --------------------------------------------------------
-void modbusBegin() {
-  uint32_t fmt = mbFormatToConfig(mcfg.mbFormat);
-
-  if (mcfg.mbUsb) {
-    // Modbus on the USB UART (UART0, GPIO43/44). Re-open the port that
-    // heltec_setup() left at 115200 8N1 with the configured Modbus framing.
-    Serial.end();
-    Serial.begin(mcfg.mbBaud, fmt, mcfg.mbRxPin, mcfg.mbTxPin);
-    mb.begin(&Serial);                 // direct link, no DE/RE
-  } else {
-    Serial1.begin(mcfg.mbBaud, fmt, mcfg.mbRxPin, mcfg.mbTxPin);
-    if (mcfg.mbDePin >= 0) mb.begin(&Serial1, mcfg.mbDePin);
-    else                   mb.begin(&Serial1);
-  }
-  mb.setBaudrate(mcfg.mbBaud);
-  mb.slave(mcfg.mbSlaveId);
-
+// ---- registro del mapa (identico en RTU y TCP) ------------------------
+template <class MB>
+static void mapRegister(MB& mb) {
   for (int i = 0; i < MASTER_MAX_NODES; i++) {
     uint16_t b = i * NODE_BLK;
     mb.addIreg(b, 0, NODE_BLK);
@@ -71,21 +65,48 @@ void modbusBegin() {
     mb.addCoil(LOCAL_COIL, false, 4);
     mb.onSetCoil(LOCAL_COIL, onLocalCoil, 4);
   }
-
-  LOGF("[modbus] RTU slave %u @ %lu fmt %u  %s\n",
-       mcfg.mbSlaveId, (unsigned long)mcfg.mbBaud, mcfg.mbFormat,
-       mcfg.mbUsb ? "USB UART0" : "Serial1 RS-485");
 }
 
-// ---- publish ----------------------------------------------------
-static void publish() {
+// ---- setup ------------------------------------------------------------
+void modbusBegin() {
+  rtuOn = (mcfg.mbTransport == MBT_RTU  || mcfg.mbTransport == MBT_BOTH);
+  tcpOn = (mcfg.mbTransport == MBT_TCP  || mcfg.mbTransport == MBT_BOTH);
+  tcpStarted = false;
+
+  if (rtuOn) {
+    uint32_t fmt = mbFormatToConfig(mcfg.mbFormat);
+    if (mcfg.mbUsb) {
+      Serial.end();
+      Serial.begin(mcfg.mbBaud, fmt, mcfg.mbRxPin, mcfg.mbTxPin);
+      mbRtu.begin(&Serial);                 // enlace directo, sin DE/RE
+    } else {
+      Serial1.begin(mcfg.mbBaud, fmt, mcfg.mbRxPin, mcfg.mbTxPin);
+      if (mcfg.mbDePin >= 0) mbRtu.begin(&Serial1, mcfg.mbDePin);
+      else                   mbRtu.begin(&Serial1);
+    }
+    mbRtu.setBaudrate(mcfg.mbBaud);
+    mbRtu.slave(mcfg.mbSlaveId);
+    mapRegister(mbRtu);
+    LOGF("[modbus] RTU slave %u @ %lu fmt %u  %s\n",
+         mcfg.mbSlaveId, (unsigned long)mcfg.mbBaud, mcfg.mbFormat,
+         mcfg.mbUsb ? "USB UART0" : "Serial1 RS-485");
+  }
+
+  if (tcpOn)
+    LOGF("[modbus] TCP servidor :%u (arranca al asociar WiFi STA)\n",
+         mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
+}
+
+// ---- publish (identico en RTU y TCP) --------------------------------
+template <class MB>
+static void publishTo(MB& mb) {
   uint8_t online = 0;
   for (int i = 0; i < MASTER_MAX_NODES; i++) {
     uint16_t b = i * NODE_BLK;
     MasterNode&   nd = mcfg.nodes[i];
     NodeSnapshot& s  = snap[i];
 
-    for (uint16_t k = 4; k < 8; k++)         // self-clear pulse-trigger coils
+    for (uint16_t k = 4; k < 8; k++)         // auto-limpia coils de disparo de pulso
       if (mb.Coil(b + k)) mb.Coil(b + k, false);
 
     mb.Ireg(b + 9, nd.addr);
@@ -115,7 +136,7 @@ static void publish() {
     if (nd.enabled && s.online) online++;
   }
 
-  mb.Ireg(GLOBAL_BASE + 0, 0x0203);            // proto marker
+  mb.Ireg(GLOBAL_BASE + 0, 0x0203);            // proto marker (contrato Seccion 3.2)
   mb.Ireg(GLOBAL_BASE + 1, mcfg.nodeCount);
   mb.Ireg(GLOBAL_BASE + 2, online);
   mb.Ireg(GLOBAL_BASE + 3, mcfg.localIoEnabled ? 1 : 0);
@@ -133,7 +154,24 @@ static void publish() {
 }
 
 void modbusTask() {
-  mb.task();
+  // Arranca el servidor TCP cuando la WiFi STA ya tiene IP (evita bind sin red).
+  if (tcpOn && !tcpStarted && netStaUp()) {
+    mbTcp.server(mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
+    mapRegister(mbTcp);
+    tcpStarted = true;
+    LOGF("[modbus] TCP servidor escuchando en %s:%u\n",
+         netStaIp().c_str(), mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
+  }
+
+  if (rtuOn)      mbRtu.task();
+  if (tcpStarted) mbTcp.task();
+
   static uint32_t last = 0;
-  if (millis() - last >= 100) { last = millis(); publish(); }
+  if (millis() - last >= 100) {
+    last = millis();
+    if (rtuOn)      publishTo(mbRtu);
+    if (tcpStarted) publishTo(mbTcp);
+  }
 }
+
+bool modbusTcpReady() { return tcpStarted; }
