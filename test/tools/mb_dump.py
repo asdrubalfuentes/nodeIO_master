@@ -29,8 +29,9 @@ def main() -> int:
     c = open_client(a)
     gw = Gateway(c, a.slave)
     try:
-        print(f"# {datetime.now():%Y-%m-%d %H:%M:%S}  {a.port} "
-              f"{a.baud} 8{a.parity}{a.stopbits}  slave {a.slave}")
+        link = f"tcp {a.tcp}" if getattr(a, "tcp", None) else \
+               f"{a.port} {a.baud} 8{a.parity}{a.stopbits}"
+        print(f"# {datetime.now():%Y-%m-%d %H:%M:%S}  {link}  slave {a.slave}")
 
         g = gw.globals()
         print("\n== GLOBAL (Ireg 900) ==")

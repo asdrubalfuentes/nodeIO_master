@@ -23,6 +23,9 @@ python tools/mb_dump.py --port COM8
 python tools/mb_dump.py --port COM8 --raw          # + registros crudos
 python tools/mb_dump.py --port COM8 --parity N     # si cambiaste el formato a 8N1
 
+# por Modbus TCP (firmware con mbTransport = TCP, servidor :502 sobre WiFi STA)
+python tools/mb_dump.py --tcp 192.168.1.241 --raw
+
 # monitor continuo
 python tools/mb_watch.py --port COM8 --interval 1
 
@@ -32,7 +35,8 @@ python tools/mb_relay.py --port COM8 --node 0 --relay 1 --off
 python tools/mb_relay.py --port COM8 --node 0 --relay 2 --pulse
 ```
 
-Flags comunes: `--port --baud --parity {N,E,O} --stopbits {1,2} --slave --timeout`.
+Flags comunes: `--tcp HOST[:PORT]` (Modbus TCP; anula lo serie) · `--port --baud
+--parity {N,E,O} --stopbits {1,2} --slave --timeout`.
 
 ## Mapa de registros
 

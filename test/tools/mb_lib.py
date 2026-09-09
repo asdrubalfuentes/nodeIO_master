@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass, field
 
 import serial as pyserial
-from pymodbus.client import ModbusSerialClient
+from pymodbus.client import ModbusSerialClient, ModbusTcpClient
 
 MAX_NODES = 8
 NODE_BLK = 16
@@ -54,6 +54,9 @@ def bits4(v: int) -> list[int]:
 
 # --------------------------------------------------------------------------- CLI
 def add_serial_args(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("--tcp", metavar="HOST[:PORT]", default=None,
+                    help="usar Modbus TCP a HOST:502 (p.ej. 192.168.1.241) "
+                         "en vez del puerto serie")
     ap.add_argument("--port", default="COM8", help="serial port (default COM8)")
     ap.add_argument("--baud", type=int, default=19200, help="baud (default 19200)")
     ap.add_argument("--parity", default="E", choices=["N", "E", "O"],
@@ -78,10 +81,19 @@ def client_from_args(a: argparse.Namespace) -> ModbusSerialClient:
     )
 
 
-def open_client(a: argparse.Namespace) -> ModbusSerialClient:
-    """Open the port with DTR/RTS held low so the CP210x auto-reset circuit
-    doesn't reboot the ESP32 on connect, hand the serial object to pymodbus,
-    then wait out any reset that still slipped through."""
+def open_client(a: argparse.Namespace):
+    """Abre el cliente Modbus. Con --tcp usa Modbus TCP; si no, el puerto serie
+    con DTR/RTS en bajo para que el circuito de auto-reset del CP210x no
+    reinicie el ESP32 al conectar."""
+    tcp = getattr(a, "tcp", None)
+    if tcp:
+        host, _, port = tcp.partition(":")
+        c = ModbusTcpClient(host, port=int(port or 502), timeout=a.timeout)
+        if not c.connect():
+            print(f"ERROR: no conecta a {host}:{port or 502}", file=sys.stderr)
+            raise SystemExit(2)
+        return c
+
     c = client_from_args(a)
     ser = pyserial.Serial()
     ser.port = a.port
