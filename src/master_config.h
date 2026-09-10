@@ -39,6 +39,16 @@ struct MasterConfig {
   bool     staStatic;                  // false -> DHCP
   uint32_t staIp, staGw, staMask;      // solo si staStatic (0 = sin definir)
 
+  // --- Puente MQTT (ORCHESTRATION/MQTT_BRIDGE.md) ---
+  bool     mqttEnabled;                // default false
+  char     mqttHost[64];              // "emqx.aysafi.com"
+  uint16_t mqttPort;                  // 8883 (TLS) / 1883
+  bool     mqttTls;                   // default true
+  char     mqttUser[32];
+  char     mqttPass[64];
+  char     mqttSite[24];              // <site> del arbol de topicos aysafi/<site>/orq/...
+  uint16_t mqttPubMs;                 // periodo base de publicacion (default 2000)
+
   // --- LoRa channel (authoritative; pushed to nodes on ADOPT) ---
   float    loraFreq, loraBw;            // 915.0 / 125.0
   uint8_t  loraSf, loraCr, loraSync;    // 9 / 5 / 0x34

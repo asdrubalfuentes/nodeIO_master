@@ -8,17 +8,11 @@
 #include "net_master.h"
 #include "portal_master.h"
 #include "ota_update.h"
+#include "mqtt_bridge.h"
+#include "fw_version.h"
 #include "log.h"
 
-#define FW_VERSION "V1.2026.006-gw"   // + Modbus TCP/WiFi STA + ROLLCALL + OTA
-
-// Version semver (X.Y.Z) para el canal OTA (GitHub Releases). El CI la
-// sobreescribe desde el tag; sin CI vale este literal.
-#ifdef FW_VERSION_OVERRIDE
-#define FW_SEMVER FW_VERSION_OVERRIDE
-#else
-#define FW_SEMVER "1.2.0"
-#endif
+#define FW_VERSION FW_VERSION_STR
 
 #define OTA_REPO         "nodeIO_master"
 #define OTA_CHECK_EVERY_MS  (6UL * 3600UL * 1000UL)   // re-chequeo periodico
@@ -394,8 +388,9 @@ void setup() {
     LOGF("[cfg] ROLLCALL recupero %u nodo(s)\n", mcfg.nodeCount);
   }
 
-  netBegin();            // WiFi STA (si esta habilitada) para Modbus TCP
+  netBegin();            // WiFi STA (si esta habilitada) para Modbus TCP + SNTP
   modbusBegin();
+  mqttBridgeBegin();     // puente MQTT (si mcfg.mqttEnabled); conecta en loop()
   mode = MODE_NORMAL;
 }
 
@@ -405,9 +400,12 @@ void loop() {
   if (mode == MODE_NORMAL) {
     handleButtonsNormal();
     netLoop();
+    if (mqttTakeWantOta()) otaMaybeCheck(true);
     otaMaybeCheck(false);      // 1a vez en cuanto haya WiFi; luego cada 6 h
+    if (mqttTakeWantRollcall()) masterRollcall();
     masterPollLoop();
     modbusTask();
+    mqttBridgeLoop();          // puente MQTT: reconexion + publicadores + comandos
     drawStatusScreen();
   }
   else if (mode == MODE_PORTAL) {

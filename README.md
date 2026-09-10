@@ -177,24 +177,36 @@ Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` — modelo
 
 ---
 
-## 10. Puente MQTT — **spec, por implementar** (`FW_SEMVER 1.4.0`)
+## 10. Puente MQTT (`FW_SEMVER 1.4.0`, **implementado**)
 
 Contrato: [`../ORCHESTRATION/MQTT_BRIDGE.md`](../ORCHESTRATION/MQTT_BRIDGE.md) +
 [`REGISTER_MAP.md §7 — MAPA G`](../ORCHESTRATION/REGISTER_MAP.md).
 
-El gateway pasará a ser el **único publicador MQTT** de la orquestación (el LOGO!
-no habla MQTT y no gana conexiones):
+El gateway es el **único publicador MQTT** de la orquestación (el LOGO! no habla
+MQTT y no gana conexiones).
 
-- **Servidor Modbus — bloques nuevos** (`modbus_gw`): **Holding Registers** para
-  el *espejo de MAPA B* (hoy el gateway no expone HR; el LOGO! lo escribe con
-  *Network Output* FC16) y **coils `1000+`** para los *comandos de la nube* (el
-  LOGO! los lee con *Network Input* FC01; el firmware auto-limpia los pulsos).
-- **Cliente MQTT** (`WiFiClientSecure` + `PubSubClient` o `MQTTPubSubClient`),
-  reconexión no bloqueante. **SNTP** para el `ts` de los payloads.
-- Publica `gw/state`, `plant`, `station/<s>/data|scale`, `node/<addr>/raw`,
-  `nodes` (JSON, *report by exception*). Se suscribe a `…/cmd/#`, valida
-  (resets con armado, rangos, anti-rebote) y responde `…/cmd/ack`.
-- Config (host/puerto/usuario/clave/`site`/TLS) en `MasterConfig` (NVS) + portal.
-  `CFG_MAGIC` +1.
-- Las escrituras a **relés de nodo** desde MQTT reusan la ruta LoRa `WR`/`WP` ya
-  existente (no pasan por MAPA G).
+- **`modbus_gw` — MAPA G** (solo backend TCP): `mbTcp.addHreg(0, .., 106)` =
+  espejo de MAPA B (lo escribe el LOGO! con *Network Output* FC16); `mbTcp.addCoil(1000, .., 32)`
+  = comandos de la nube (el LOGO! los lee con *Network Input* FC01). Los coils
+  de pulso (`+2/+3/+4/+5/+8/+9`) se auto-limpian tras `MAPG_PULSE_DWELL_MS`
+  (1,5 s > periodo del Network Input). API: `modbusMirrorHreg()`, `modbusCmdCoil()`.
+- **`mqtt_bridge`** (`PubSubClient` + `ArduinoJson`, TLS opcional vía
+  `WiFiClientSecure::setInsecure()`). `mqttBridgeLoop()` en `MODE_NORMAL`:
+  reconexión (bloquea ~4 s, reintento 20 s), `loop()`, publicadores por timer
+  (`plant`/`station/*`/`node/*` cada `mqttPubMs`; `gw/state`+`nodes` cada 30 s),
+  y el callback de `…/cmd`. `gw/cmd rollcall|ota` se ejecutan en `main` fuera del
+  callback (`mqttTakeWant*()`).
+- **`net_master`** arma **SNTP** al asociar la WiFi (`netEpoch()` → `ts`).
+- **Config en el portal cautivo** (fieldset "Puente MQTT"): habilitar, broker,
+  puerto, TLS, usuario, clave, sitio, periodo. En `MasterConfig` (claves de
+  identidad NVS, ver abajo).
+- Relés de nodo desde MQTT (`node/<addr>/relay`) reusan la ruta LoRa `WR`/`WP`
+  (no pasan por MAPA G). `station/<s>/scale/set` reservado, aún sin implementar.
+
+### Identidad NVS separada (`master_config`)
+
+La **tabla de nodos**, el **canal LoRa**, la **dir. del master**, la **WiFi STA**
+y la **config MQTT** se guardan como **claves sueltas** (`id_*`, sin `magic`) +
+un espejo en **LittleFS** (`/id.bin`). Subir `CFG_MAGIC` para features nuevas ya
+**no borra el emparejamiento**. `CFG_MAGIC` 03→04 (este bump lo reinicia una
+última vez — ver `CHANGELOG.md`).

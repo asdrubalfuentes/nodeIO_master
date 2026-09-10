@@ -137,10 +137,22 @@ versión nueva al arrancar y cada 6 horas, la descarga, comprueba su integridad
 (SHA-256) y se reinicia. La OLED muestra "OTA" y el porcentaje. Durante la
 descarga (~1 min) deja de responder Modbus; vuelve al reiniciar.
 
-> **Próxima versión (1.4.0):** el gateway publicará toda la planta por **MQTT**
-> (datos del PLC, de los nodos y suyos) y aceptará comandos desde la nube. Se
-> configurará broker/usuario/clave en el portal. Ver `MQTT_BRIDGE.md` en el
-> repositorio `orchetra`.
+### Puente MQTT (desde 1.4.0)
+
+Con la WiFi de planta conectada y el puente habilitado, el gateway **publica toda
+la orquestación por MQTT** (datos del PLC, de los nodos y suyos) y **acepta
+comandos desde la nube**. Se configura en el portal cautivo, fieldset **"Puente
+MQTT"**: habilitar, broker, puerto (8883 TLS / 1883), usuario, clave, **sitio**
+(raíz de tópicos `aysafi/<sitio>/orq/…`) y periodo de publicación. Detalle de
+tópicos y payloads en `MQTT_BRIDGE.md` (repositorio `orchetra`).
+
+> Habilítalo solo con un broker **alcanzable**: si no responde, cada intento de
+> conexión frena el Modbus ~4 s.
+
+> **Al actualizar a 1.4.0 el emparejamiento se reinicia una vez.** Si los nodos
+> están en el canal LoRa de fábrica, el gateway reconstruye la tabla solo con
+> ROLLCALL al arrancar; si usan un canal propio, vuelve a adoptarlos. Desde 1.4.0
+> el emparejamiento sobrevive a futuras actualizaciones.
 
 **Un nodo** se actualiza cuando pulsas **OTA** en su fila del portal: el nodo
 confirma, reinicia en "MODO OTA" y baja el firmware por su **WiFi de

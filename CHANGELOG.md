@@ -3,6 +3,40 @@
 Formato de versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico).
 El firmware embebe `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.4.0 — puente MQTT + identidad NVS separada
+
+### Identidad separada (sobrevive a los bumps de `CFG_MAGIC`)
+
+- La **tabla de nodos**, el **canal LoRa**, la **dirección del master**, la
+  **WiFi de planta** y la **config MQTT** se guardan como **claves sueltas** en
+  NVS (sin `magic`). Desde aquí, subir `CFG_MAGIC` para meter features nuevas
+  **ya no borra el emparejamiento**.
+- **Red de seguridad**: espejo de la identidad de campo (tabla + canal + master
+  addr) en **LittleFS** (`/id.bin`, partición aparte). Se restaura solo si la
+  identidad de NVS aparece en blanco.
+- `CFG_MAGIC` 03 → **04**. ⚠️ **Este bump reinicia el emparejamiento una última
+  vez** (el firmware anterior no escribía las claves de identidad). Tras
+  actualizar a 1.4.0: si los nodos están en el canal de fábrica, el `ROLLCALL`
+  del arranque reconstruye la tabla; si usan canal propio, re-adóptalos. **A
+  partir de 1.4.0 queda protegido.** Recomendado: 1.4.0 = último flasheo por USB.
+
+### Puente MQTT (`MQTT_BRIDGE.md`)
+
+- **`modbus_gw`**: bloque nuevo en el servidor TCP — **Holding Registers 0..105**
+  (espejo de MAPA B que escribe el LOGO! con *Network Output*) y **coils
+  1000..1031** (comandos de la nube; el LOGO! los lee con *Network Input*; los
+  pulsos se auto-limpian tras 1,5 s).
+- **`mqtt_bridge`** (`PubSubClient` + `ArduinoJson`, TLS opcional): publica
+  `gw/state`, `nodes`, `plant`, `station/<s>/data` y `node/<addr>/raw` en
+  `aysafi/<sitio>/orq/…`; se suscribe a `station/+/cmd`, `node/+/relay`,
+  `gw/cmd`, valida (resets con `arm`, rangos, anti-rebote) y responde `…/ack`.
+- **SNTP** (`net_master`) para el `ts` de los payloads.
+- Config completa en el **portal cautivo** (fieldset "Puente MQTT": habilitar,
+  broker, puerto, TLS, usuario/clave, sitio, periodo).
+- `scale/set` desde MQTT: reservado, aún no implementado (responde `ack ok:false`).
+- La reconexión MQTT bloquea ~4 s; reintenta cada 20 s. Habilítalo solo con un
+  broker alcanzable.
+
 ## 1.2.0 — OTA vía GitHub Releases
 
 - **OTA "GitHub Releases pull"** (`src/ota_update.{h,cpp}`, módulo común de

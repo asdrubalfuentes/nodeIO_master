@@ -19,6 +19,13 @@ static const uint16_t NODE_BLK   = 16;
 static const uint16_t GLOBAL_BASE = 900;   // Input Reg 900..915
 static const uint16_t LOCAL_COIL  = 900;   // Coil 900..903
 
+// ---- MAPA G (puente MQTT, solo TCP) ----
+static const uint32_t MAPG_PULSE_DWELL_MS = 1500;  // > periodo de Network Input del LOGO!
+// Los coils PULSO (se auto-limpian tras el dwell) son +2 silenciar, +3/+4 reset
+// dia/mes, +5 ACK, +8 aplicar escala, +9 armar reset; +0/+1 (sirena) son de nivel.
+// Quien llama a modbusCmdCoil() decide con el flag `pulse`.
+static uint32_t mapgSetAt[MAPG_CMD_COUNT] = {};
+
 // Sombra de la consigna de reles por nodo. Evita depender de "que instancia"
 // recibio la escritura cuando hay dos backends activos.
 static bool relaySet[MASTER_MAX_NODES][4] = {};
@@ -158,8 +165,10 @@ void modbusTask() {
   if (tcpOn && !tcpStarted && netStaUp()) {
     mbTcp.server(mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
     mapRegister(mbTcp);
+    mbTcp.addHreg(MAPG_HR_BASE, 0, MAPG_HR_COUNT);      // MAPA G.1: espejo de MAPA B
+    mbTcp.addCoil(MAPG_CMD_BASE, false, MAPG_CMD_COUNT); // MAPA G.2: comandos de la nube
     tcpStarted = true;
-    LOGF("[modbus] TCP servidor escuchando en %s:%u\n",
+    LOGF("[modbus] TCP servidor escuchando en %s:%u  (+ MAPA G)\n",
          netStaIp().c_str(), mcfg.mbTcpPort ? mcfg.mbTcpPort : 502);
   }
 
@@ -171,7 +180,31 @@ void modbusTask() {
     last = millis();
     if (rtuOn)      publishTo(mbRtu);
     if (tcpStarted) publishTo(mbTcp);
+
+    // auto-limpieza de los coils de comando de tipo PULSO
+    if (tcpStarted) {
+      uint32_t now = millis();
+      for (uint16_t i = 0; i < MAPG_CMD_COUNT; i++) {
+        if (!mapgSetAt[i]) continue;
+        if (now - mapgSetAt[i] >= MAPG_PULSE_DWELL_MS) {
+          mbTcp.Coil(MAPG_CMD_BASE + i, false);
+          mapgSetAt[i] = 0;
+        }
+      }
+    }
   }
 }
 
 bool modbusTcpReady() { return tcpStarted; }
+
+uint16_t modbusMirrorHreg(uint16_t addr) {
+  return tcpStarted ? mbTcp.Hreg(addr) : 0;
+}
+
+void modbusCmdCoil(uint16_t coilAbs, bool value, bool pulse) {
+  if (!tcpStarted) return;
+  if (coilAbs < MAPG_CMD_BASE || coilAbs >= MAPG_CMD_BASE + MAPG_CMD_COUNT) return;
+  mbTcp.Coil(coilAbs, value);
+  uint16_t i = coilAbs - MAPG_CMD_BASE;
+  mapgSetAt[i] = (pulse && value) ? millis() : 0;   // 0 = no auto-limpiar
+}

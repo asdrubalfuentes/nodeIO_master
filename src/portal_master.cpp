@@ -127,6 +127,18 @@ static String buildPage() {
   h += "<div><label>Gateway</label><input name=stagw value='" + ipToStr(mcfg.staGw) + "'></div>";
   h += "<div><label>M&aacute;scara</label><input name=stamask value='" + ipToStr(mcfg.staMask) + "'></div></div>";
 
+  h += F("</fieldset><fieldset><legend>Puente MQTT (publica la orqueste&iacute;a y recibe comandos)</legend>"
+         "<label><input type=checkbox name=mqen style=width:auto");
+  h += String(mcfg.mqttEnabled ? " checked" : "") + "> Habilitar el puente MQTT";
+  h += "<label>Broker</label><input name=mqhost maxlength=63 value='" + String(mcfg.mqttHost) + "'>";
+  h += "<div class=row><div><label>Puerto</label><input name=mqport type=number min=1 max=65535 value=" +
+       String(mcfg.mqttPort ? mcfg.mqttPort : 8883) + "></div>";
+  h += F("<div><label><input type=checkbox name=mqtls style=width:auto");
+  h += String(mcfg.mqttTls ? " checked" : "") + "> TLS</label></div></div>";
+  h += "<div class=row><div><label>Usuario</label><input name=mquser maxlength=31 value='" + String(mcfg.mqttUser) + "'></div>";
+  h += "<div><label>Clave</label><input name=mqpass maxlength=63 value='" + String(mcfg.mqttPass) + "'></div></div>";
+  h += "<div class=row><div><label>Sitio (t&oacute;pico aysafi/&lt;sitio&gt;/orq/)</label><input name=mqsite maxlength=23 value='" + String(mcfg.mqttSite) + "'></div>";
+  h += "<div><label>Periodo publicaci&oacute;n ms</label><input name=mqpub type=number min=500 max=60000 value=" + String(mcfg.mqttPubMs ? mcfg.mqttPubMs : 2000) + "></div></div>";
   h += F("</fieldset><fieldset><legend>Modbus RTU (respaldo de banco)</legend>");
   h += "<label><input type=checkbox name=mbusb style=width:auto" +
        String(mcfg.mbUsb ? " checked" : "") +
@@ -196,6 +208,15 @@ static void handleSave() {
   mcfg.staIp   = strToIp(web.arg("staip"));
   mcfg.staGw   = strToIp(web.arg("stagw"));
   mcfg.staMask = strToIp(web.arg("stamask"));
+
+  mcfg.mqttEnabled = web.hasArg("mqen");
+  if (web.hasArg("mqhost")) web.arg("mqhost").toCharArray(mcfg.mqttHost, sizeof(mcfg.mqttHost));
+  mcfg.mqttPort = (uint16_t)constrain(argL("mqport", mcfg.mqttPort ? mcfg.mqttPort : 8883), 1, 65535);
+  mcfg.mqttTls  = web.hasArg("mqtls");
+  if (web.hasArg("mquser")) web.arg("mquser").toCharArray(mcfg.mqttUser, sizeof(mcfg.mqttUser));
+  if (web.hasArg("mqpass")) web.arg("mqpass").toCharArray(mcfg.mqttPass, sizeof(mcfg.mqttPass));
+  if (web.hasArg("mqsite")) web.arg("mqsite").toCharArray(mcfg.mqttSite, sizeof(mcfg.mqttSite));
+  mcfg.mqttPubMs = (uint16_t)constrain(argL("mqpub", mcfg.mqttPubMs ? mcfg.mqttPubMs : 2000), 500, 60000);
 
   mcfg.localIoEnabled = web.hasArg("locio");
   web.arg("apssid").toCharArray(mcfg.apSsid, sizeof(mcfg.apSsid));

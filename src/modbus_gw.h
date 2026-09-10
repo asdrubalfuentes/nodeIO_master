@@ -26,3 +26,18 @@
 void modbusBegin();
 void modbusTask();      // llamar en cada loop(): task() de los backends + publish throttled
 bool modbusTcpReady();  // true cuando el servidor Modbus TCP esta escuchando
+
+// ---- MAPA G: puente hacia MQTT (solo backend TCP) --------------------------
+// El LOGO! escribe el espejo de MAPA B (Holding Regs 0..105) con Network Output
+// y lee los coils de comando (1000 + s*16 + k) con Network Input.
+// Ver ORCHESTRATION/REGISTER_MAP.md SS7 y MQTT_BRIDGE.md.
+#define MAPG_HR_BASE     0
+#define MAPG_HR_COUNT    106       // estaciones (0..63) + bloque global (96..105)
+#define MAPG_CMD_BASE    1000
+#define MAPG_CMD_STRIDE  16
+#define MAPG_CMD_COUNT   32        // 2 estaciones
+
+uint16_t modbusMirrorHreg(uint16_t addr);   // lee el espejo (0 si el TCP no esta listo)
+// Pone un coil de comando de MAPA G (dir. absoluta 1000..1031). pulse=true ->
+// se auto-limpia tras un tiempo (para que el flanco llegue al LOGO! una vez).
+void     modbusCmdCoil(uint16_t coilAbs, bool value, bool pulse);
