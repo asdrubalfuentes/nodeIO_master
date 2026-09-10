@@ -174,3 +174,27 @@ Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` — modelo
   `OTA,<mac>` y espera el `ACK`. El nodo (nodeIO ≥ 1.3.0) se actualiza por su
   propia WiFi de mantenimiento (ver `../nodeIO/PROTOCOL.md`).
 - Partición `default_8MB.csv` = dual-OTA (app0/app1 de 3.19 MB); no se toca.
+
+---
+
+## 10. Puente MQTT — **spec, por implementar** (`FW_SEMVER 1.4.0`)
+
+Contrato: [`../ORCHESTRATION/MQTT_BRIDGE.md`](../ORCHESTRATION/MQTT_BRIDGE.md) +
+[`REGISTER_MAP.md §7 — MAPA G`](../ORCHESTRATION/REGISTER_MAP.md).
+
+El gateway pasará a ser el **único publicador MQTT** de la orquestación (el LOGO!
+no habla MQTT y no gana conexiones):
+
+- **Servidor Modbus — bloques nuevos** (`modbus_gw`): **Holding Registers** para
+  el *espejo de MAPA B* (hoy el gateway no expone HR; el LOGO! lo escribe con
+  *Network Output* FC16) y **coils `1000+`** para los *comandos de la nube* (el
+  LOGO! los lee con *Network Input* FC01; el firmware auto-limpia los pulsos).
+- **Cliente MQTT** (`WiFiClientSecure` + `PubSubClient` o `MQTTPubSubClient`),
+  reconexión no bloqueante. **SNTP** para el `ts` de los payloads.
+- Publica `gw/state`, `plant`, `station/<s>/data|scale`, `node/<addr>/raw`,
+  `nodes` (JSON, *report by exception*). Se suscribe a `…/cmd/#`, valida
+  (resets con armado, rangos, anti-rebote) y responde `…/cmd/ack`.
+- Config (host/puerto/usuario/clave/`site`/TLS) en `MasterConfig` (NVS) + portal.
+  `CFG_MAGIC` +1.
+- Las escrituras a **relés de nodo** desde MQTT reusan la ruta LoRa `WR`/`WP` ya
+  existente (no pasan por MAPA G).

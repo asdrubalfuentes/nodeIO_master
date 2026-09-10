@@ -137,6 +137,11 @@ versión nueva al arrancar y cada 6 horas, la descarga, comprueba su integridad
 (SHA-256) y se reinicia. La OLED muestra "OTA" y el porcentaje. Durante la
 descarga (~1 min) deja de responder Modbus; vuelve al reiniciar.
 
+> **Próxima versión (1.4.0):** el gateway publicará toda la planta por **MQTT**
+> (datos del PLC, de los nodos y suyos) y aceptará comandos desde la nube. Se
+> configurará broker/usuario/clave en el portal. Ver `MQTT_BRIDGE.md` en el
+> repositorio `orchetra`.
+
 **Un nodo** se actualiza cuando pulsas **OTA** en su fila del portal: el nodo
 confirma, reinicia en "MODO OTA" y baja el firmware por su **WiFi de
 mantenimiento** (se configura una vez en el portal del propio nodo). Si el nodo
