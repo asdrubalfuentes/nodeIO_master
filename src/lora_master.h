@@ -41,3 +41,8 @@ bool    masterRelease(int slot);
 // responden HERE). Uso: al arrancar con la tabla vacia, o desde el portal.
 // Devuelve cuantos nodos se incorporaron. Persiste si incorpora alguno.
 uint8_t masterRollcall(uint16_t windowMs = 4000);
+
+// OTA: pide al nodo `slot` que reinicie en modo actualizacion (descarga el
+// firmware de GitHub Releases por su WiFi de mantenimiento). Devuelve true si el
+// nodo confirmo (ACK). Bloqueante; llamar desde el portal.
+bool masterOtaTrigger(int slot);

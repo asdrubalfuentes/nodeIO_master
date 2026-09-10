@@ -283,6 +283,34 @@ bool masterRelease(int slot) {
   return true;
 }
 
+bool masterOtaTrigger(int slot) {
+  if (slot < 0 || slot >= MASTER_MAX_NODES || !mcfg.nodes[slot].addr) return false;
+  const char* mac = mcfg.nodes[slot].mac;
+  char body[40];
+  snprintf(body, sizeof(body), "OTA,%s", mac);
+  for (int attempt = 0; attempt < 3; attempt++) {
+    sendFrame(mcfg.nodes[slot].addr, body);
+    uint32_t t0 = millis();
+    while (millis() - t0 < 1500) {
+      char text[220];
+      int L = readFrameNow(text, sizeof(text));
+      if (L <= 0) { delay(2); continue; }
+      char* save = nullptr;
+      strtok_r(text, ",", &save);                 // dst
+      strtok_r(nullptr, ",", &save);              // src
+      strtok_r(nullptr, ",", &save);              // seq
+      char* resp = strtok_r(nullptr, ",", &save);
+      char* amac = strtok_r(nullptr, ",", &save);
+      if (resp && amac && !strcasecmp(amac, mac) && !strcmp(resp, "ACK")) {
+        LOGF("[ota] nodo %u -> reinicia en modo OTA\n", mcfg.nodes[slot].addr);
+        return true;
+      }
+    }
+  }
+  LOGF("[ota] nodo %u sin respuesta al OTA\n", mcfg.nodes[slot].addr);
+  return false;
+}
+
 uint8_t masterRollcall(uint16_t windowMs) {
   uint8_t added = 0;
   for (int attempt = 0; attempt < 3; attempt++) {

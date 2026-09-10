@@ -65,7 +65,10 @@ static String buildPage() {
          "<button>" + (n.enabled ? "Desact." : "Activar") + "</button></form> "
          "<form method=post action=/remove style=display:inline>"
          "<input type=hidden name=slot value=" + String(i) + ">"
-         "<button class=del>Quitar</button></form></td></tr>";
+         "<button class=del>Quitar</button></form> "
+         "<form method=post action=/nodeota style=display:inline>"
+         "<input type=hidden name=slot value=" + String(i) + ">"
+         "<button>OTA</button></form></td></tr>";
   }
   h += "</table>";
 
@@ -243,6 +246,16 @@ static void handleToggle() {
   redirectHome();
 }
 
+static void handleNodeOta() {
+  int slot = web.arg("slot").toInt();
+  bool ok = (slot >= 0 && slot < MASTER_MAX_NODES) && masterOtaTrigger(slot);
+  web.send(200, "text/html",
+           String(F("<!doctype html><meta charset=utf-8><body style='font-family:sans-serif'>")) +
+           (ok ? F("Nodo reiniciando en modo OTA. Actualizara por su WiFi de mantenimiento.")
+               : F("El nodo no respondio (sin enlace, o sin WiFi de mantenimiento configurada).")) +
+           F("<br><a href=/>volver</a></body>"));
+}
+
 // --------------------------------------------------------------------------
 void portalStart() {
   WiFi.mode(WIFI_AP);
@@ -260,6 +273,7 @@ void portalStart() {
   web.on("/adopt",    HTTP_POST, handleAdopt);
   web.on("/remove", HTTP_POST, handleRemove);
   web.on("/toggle", HTTP_POST, handleToggle);
+  web.on("/nodeota", HTTP_POST, handleNodeOta);
   web.on("/generate_204", redirectHome);
   web.on("/gen_204", redirectHome);
   web.on("/hotspot-detect.html", redirectHome);

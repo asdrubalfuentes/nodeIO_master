@@ -7,9 +7,55 @@
 #include "modbus_gw.h"
 #include "net_master.h"
 #include "portal_master.h"
+#include "ota_update.h"
 #include "log.h"
 
-#define FW_VERSION "V1.2026.006-gw"   // + Modbus TCP/WiFi STA + ROLLCALL
+#define FW_VERSION "V1.2026.006-gw"   // + Modbus TCP/WiFi STA + ROLLCALL + OTA
+
+// Version semver (X.Y.Z) para el canal OTA (GitHub Releases). El CI la
+// sobreescribe desde el tag; sin CI vale este literal.
+#ifdef FW_VERSION_OVERRIDE
+#define FW_SEMVER FW_VERSION_OVERRIDE
+#else
+#define FW_SEMVER "1.2.0"
+#endif
+
+#define OTA_REPO         "nodeIO_master"
+#define OTA_CHECK_EVERY_MS  (6UL * 3600UL * 1000UL)   // re-chequeo periodico
+
+static void otaOled(ota::Phase ph, int pct, const char *d) {
+  display.clear();
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(0, 0, "OTA " FW_SEMVER);
+  const char *m = "";
+  char buf[24];
+  switch (ph) {
+    case ota::Phase::Check:    m = "buscando..."; break;
+    case ota::Phase::UpToDate: m = "al dia"; break;
+    case ota::Phase::Download: snprintf(buf, sizeof(buf), "bajando %d%%", pct); m = buf; break;
+    case ota::Phase::Verify:   m = "verificando"; break;
+    case ota::Phase::Flash:    m = "escribiendo"; break;
+    case ota::Phase::Done:     m = "OK, reinicia"; break;
+    case ota::Phase::Error:    m = "error"; break;
+  }
+  display.drawString(0, 22, m);
+  if (d && *d) display.drawString(0, 40, d);
+  display.display();
+}
+
+static void otaMaybeCheck(bool force) {
+  static uint32_t last = 0;
+  if (!netStaUp()) return;
+  if (!force && last != 0 && millis() - last < OTA_CHECK_EVERY_MS) return;
+  last = millis();
+  ota::Config oc;
+  oc.owner = "asdrubalfuentes";
+  oc.repo = OTA_REPO;
+  oc.currentVersion = FW_SEMVER;
+  ota::Result r = ota::run(oc, otaOled);   // si hay update: descarga + reinicia
+  if (!r.ok) LOGF("[ota] %s\n", r.error);
+  else if (!r.hasUpdate) LOGLN("[ota] al dia");
+}
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_MENU, MODE_NODE_VIEW };
 static Mode     mode            = MODE_NORMAL;
@@ -359,6 +405,7 @@ void loop() {
   if (mode == MODE_NORMAL) {
     handleButtonsNormal();
     netLoop();
+    otaMaybeCheck(false);      // 1a vez en cuanto haya WiFi; luego cada 6 h
     masterPollLoop();
     modbusTask();
     drawStatusScreen();
