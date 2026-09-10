@@ -29,12 +29,13 @@ pio device monitor -b 115200      # solo log; Modbus va por RS-485
 
 | Módulo | Responsabilidad |
 |---|---|
-| `src/main.cpp` | Estados `MODE_NORMAL` / `MODE_PORTAL`, splash, OLED de estado, long-press de BUTTON_1. **Único TU que incluye `heltec_unofficial.h`.** |
+| `src/main.cpp` | Estados `MODE_NORMAL` / `MODE_PORTAL` / `MODE_MENU` / `MODE_NODE_VIEW`, splash, OLED de estado, botones. `otaMaybeCheck()` (al conectar la WiFi y cada 6 h). **Único TU que incluye `heltec_unofficial.h`.** |
 | `src/master_config.{h,cpp}` | `MasterConfig` en NVS (namespace `masterio`, blob + magic): LoRa, transporte Modbus (`mbTransport`, `mbTcpPort`), RTU, **WiFi STA** (`staSsid/staPass/staStatic/staIp/...`), polling, IO local, AP y **tabla de nodos** `MasterNode nodes[8]`. Helpers `masterFindByMac/Addr`, `masterAddNode`, `masterRemoveNode`, `mbFormatToConfig`. |
 | `src/lora_master.{h,cpp}` | Lado LoRa: `masterBegin()`, `masterPollLoop()` (round-robin `RD`, cola de escritura `WR`/`WP`, marcado online/offline en `snap[8]`), y los bloqueantes `masterDiscover()` / `masterAdopt()` / `masterRelease()` usados por el portal. |
 | `src/net_master.{h,cpp}` | WiFi STA para Modbus TCP: `netBegin()` (arranca STA si `mcfg.staEnabled`), `netLoop()` (FSM de reconexión), `netStaUp()` / `netStaIp()`. Independiente de la radio LoRa. Solo en MODO NORMAL; el portal sigue en SoftAP. |
 | `src/modbus_gw.{h,cpp}` | **`ModbusRTU` + `ModbusIP`** (misma API `ModbusAPI<T>`). El mapa y `publish()` se escriben una vez con plantillas (`mapRegister<>`, `publishTo<>`) y se aplican al/los transporte(s) activo(s) según `mcfg.mbTransport`. El servidor TCP arranca cuando la WiFi STA obtiene IP. Callbacks `onSetCoil` → `masterQueueRelays/Pulse` (con sombra `relaySet[][]` para no depender de qué backend recibió la escritura). |
-| `src/portal_master.{h,cpp}` | Portal cautivo (DNS :53 `*`, WebServer :80). Rutas `/` `/save` `/scan` `/adopt` `/remove` `/toggle`. La radio sigue viva en modo portal para descubrir/adoptar. |
+| `src/portal_master.{h,cpp}` | Portal cautivo (DNS :53 `*`, WebServer :80). Rutas `/` `/save` `/scan` `/rollcall` `/adopt` `/remove` `/toggle` `/nodeota`. La radio sigue viva en modo portal para descubrir/adoptar. |
+| `src/ota_update.{h,cpp}` | Cliente **OTA "GitHub Releases pull"** (módulo común de `../ORCHESTRATION/tools/ota/`): `version.txt` → `firmware.bin` + verificación `SHA-256`. Autoactualiza el gateway; ver §9. |
 | `src/io.{h,cpp}` | Copia de `nodeIO` (pines/ISR/relés). Aquí solo se usan los botones y, si `localIoEnabled`, las lecturas AI/DI. |
 
 `lora_master.cpp` y `modbus_gw.cpp` incluyen `<RadioLib.h>` / `<ModbusRTU.h>` y
@@ -83,6 +84,8 @@ aprovisionamiento:
 - `ADOPT,<mac>,<addr>,<freq>,<sf>,<bw>,<cr>,<sync>,<pwr>` (→255) → el nodo guarda
   dirección + canal y responde `ACK,<mac>`.
 - `RELEASE,<mac>` → el nodo vuelve a "sin adoptar".
+- `OTA,<mac>` → `masterOtaTrigger(slot)` (bloqueante, desde el portal `/nodeota`):
+  el nodo confirma `ACK,<mac>,OTA` y reinicia en modo actualización. Ver §9.
 - Operación: `RD` → `ST,...`; `WR,<r1..r4>`; `WP,<idx>,<ms>`.
 
 El gateway usa `mcfg.masterLoraAddr` (def. 200) como `src` y `mcfg.lora*` como
@@ -103,12 +106,12 @@ bloque IO local (si `localIoEnabled`) en Ireg 904+ y Coil 900+.
 sobre WiFi STA), `MBT_RTU` (RS-485/USB), `MBT_BOTH`. En `MBT_BOTH` una escritura
 de coil en un backend no se refleja en el otro (bench; en planta se usa solo TCP).
 
-> **Actualización de firmware:** este cambio sube `CFG_MAGIC` (03). Al arrancar
-> con la nueva versión, la NVS vieja no valida y la tabla de nodos queda vacía —
-> pero el arranque lanza **`ROLLCALL`** y la reconstruye sola desde los nodos en
-> el campo (que ya **no** se des-adoptan). Si algún nodo no aparece, usa el botón
-> ROLLCALL del portal o re-adóptalo. Configura la WiFi STA en el portal antes de
-> dejarlo en modo normal.
+> **Al subir `CFG_MAGIC`** (p.ej. la migración a WiFi STA, `03`), la NVS vieja no
+> valida y la tabla de nodos queda vacía — pero el arranque lanza **`ROLLCALL`**
+> y la reconstruye sola desde los nodos en el campo (que ya **no** se
+> des-adoptan). Si alguno no aparece, usa el botón ROLLCALL del portal o
+> re-adóptalo. Tras un cambio de `CFG_MAGIC` **el OTA no basta**: hay que flashear
+> por USB una vez.
 
 ---
 
@@ -150,3 +153,24 @@ es específico del gateway.
 - **STA vs portal:** en MODO NORMAL, si `staEnabled`, el gateway se une a la WiFi
   de planta (STA). El portal cautivo sigue siendo SoftAP y solo vive en MODO
   CONFIG; al guardar se reinicia y vuelve a STA.
+
+---
+
+## 9. OTA (autoactualización + disparo a nodos)
+
+Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` — modelo
+"GitHub Releases pull" de [`../ORCHESTRATION/OTA_ROLLOUT.md`](../ORCHESTRATION/OTA_ROLLOUT.md).
+
+- **Publicar:** `git tag vX.Y.Z` sobre `main` → el workflow compila con
+  `-D FW_VERSION_OVERRIDE=X.Y.Z` y publica un Release `latest`
+  (`firmware.bin` + `version.txt` + `firmware.sha256`). Sin CI se usa
+  `FW_SEMVER` de `main.cpp` (`1.2.0`). Sin secrets: la WiFi del gateway vive en
+  NVS/portal.
+- **Gateway:** `otaMaybeCheck()` corre en `MODE_NORMAL` en cuanto `netStaUp()`,
+  y luego cada 6 h. Si `version.txt > FW_SEMVER`, descarga, verifica el SHA-256
+  mientras escribe la partición OTA libre y reinicia. Durante la descarga
+  (~30–60 s) el servidor Modbus queda en pausa.
+- **Nodos:** botón **OTA** por fila en el portal → `masterOtaTrigger(slot)` manda
+  `OTA,<mac>` y espera el `ACK`. El nodo (nodeIO ≥ 1.3.0) se actualiza por su
+  propia WiFi de mantenimiento (ver `../nodeIO/PROTOCOL.md`).
+- Partición `default_8MB.csv` = dual-OTA (app0/app1 de 3.19 MB); no se toca.

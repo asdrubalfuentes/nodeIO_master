@@ -1,8 +1,8 @@
-# Manual de uso — Master IO (pasarela LoRa ↔ Modbus RTU)
+# Manual de uso — Master IO (pasarela LoRa ↔ Modbus)
 
 Placa: **Heltec WiFi LoRa 32 V3**. Firmware: `Master IO gateway`.
 
-El Master IO es una **pasarela**: por un lado sondea por radio LoRa hasta **8 nodos `nodeIO`** remotos; por el otro es un **esclavo Modbus RTU** en el puerto serie (USB o RS-485).
+El Master IO es una **pasarela**: por un lado sondea por radio LoRa hasta **8 nodos `nodeIO`** remotos; por el otro es un **servidor Modbus** — **TCP :502 sobre WiFi** (vía hacia el PLC LOGO! 9) y/o **RTU** en RS-485/USB (respaldo de banco).
 
 ---
 
@@ -78,7 +78,8 @@ RSSI: -75 | ON
 Entra con **Botón Builtin** (presión larga).
 
 **Secciones:**
-- **Nodos adoptados**: activar/desactivar / quitar
+- **Nodos adoptados**: activar/desactivar · quitar · **OTA** (pide al nodo que se
+  actualice, ver sección 8)
 - **Descubrir nodos**: *Buscar* (nodos sin adoptar) y *ROLLCALL* (reconstruir la
   tabla desde nodos ya adoptados por este gateway, p.ej. tras borrar la NVS o
   actualizar el firmware — no re-adopta, no toca los nodos)
@@ -120,5 +121,25 @@ planta está habilitada, la pantalla muestra `TCP <ip>:502`.
 | El PLC no lee Modbus RTU | transporte en RTU/ambos; verifica baud, paridad; DE del RS-485 |
 | Escribo coil y relé no cambia | el relé está deshabilitado en el nodo, o offline |
 | Master se reinicia al conectar por USB | el cable tiene DTR/RTS activos. Solución: cable USB sin DTR/RTS, o software (ver **Detalles técnicos**) |
+| El botón OTA de un nodo dice "no respondió" | ese nodo no tiene WiFi de mantenimiento configurada, o está sin enlace LoRa |
 
 Para más detalles técnicos, ver `firmware/README.md` en el repositorio.
+
+---
+
+## 8. Actualización de firmware (OTA)
+
+Ni el gateway ni los nodos necesitan cable para actualizarse, una vez publicada
+una versión nueva.
+
+**El gateway** se actualiza solo: con la WiFi de planta conectada, revisa si hay
+versión nueva al arrancar y cada 6 horas, la descarga, comprueba su integridad
+(SHA-256) y se reinicia. La OLED muestra "OTA" y el porcentaje. Durante la
+descarga (~1 min) deja de responder Modbus; vuelve al reiniciar.
+
+**Un nodo** se actualiza cuando pulsas **OTA** en su fila del portal: el nodo
+confirma, reinicia en "MODO OTA" y baja el firmware por su **WiFi de
+mantenimiento** (se configura una vez en el portal del propio nodo). Si el nodo
+no tiene esa red configurada, el portal avisa que no respondió.
+
+No cortes la alimentación mientras un equipo muestre "escribiendo".
