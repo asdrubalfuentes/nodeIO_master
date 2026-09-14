@@ -173,6 +173,13 @@ Módulo `src/ota_update.{h,cpp}` + CI `.github/workflows/release.yml` — modelo
 - **Nodos:** botón **OTA** por fila en el portal → `masterOtaTrigger(slot)` manda
   `OTA,<mac>` y espera el `ACK`. El nodo (nodeIO ≥ 1.3.0) se actualiza por su
   propia WiFi de mantenimiento (ver `../nodeIO/PROTOCOL.md`).
+- **Chequeo manual del propio gateway** (banco / puesta en marcha), sin
+  esperar la ventana de 6 h — ambos reusan `otaMaybeCheck(true)` y muestran
+  el progreso en el OLED (`otaOled()`):
+  - **F2 mantenido 4-5s** (modo normal).
+  - **Comando por Serial/USB** (115200 baud): escribir `buscar actualizacion`
+    (o `ota`) + Enter. Se desactiva solo si el USB está en uso como
+    transporte Modbus RTU (`mcfg.mbUsb`).
 - Partición `default_8MB.csv` = dual-OTA (app0/app1 de 3.19 MB); no se toca.
 
 ---
