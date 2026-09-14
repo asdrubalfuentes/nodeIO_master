@@ -3,6 +3,23 @@
 Formato de versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico).
 El firmware embebe `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.5.0 — MAPA A2 + cierre automático de día/mes + F2 OTA (cambio de rumbo)
+
+- **MAPA A2** (`modbus_gw`): nuevo bloque Input Registers (base `200+i*16`) con
+  nivel/caudal escalados, los 4 acumulados (día/mes × nivel/caudal, m³ ×1000
+  int32 hi-first) y `almBits` por nodo — lo que el nodo ya calcula (ver
+  `nodeIO` 1.4.0), el gateway solo lo relee y republica.
+- `lora_master`: `NodeSnapshot` extendido; `parseStatus()` lee el `ST`
+  extendido si el nodo lo trae (compatible con nodos en firmware viejo —
+  strtok_r da NULL y se queda con el último valor). `masterQueueCloseDay()`/
+  `CloseMonth()` (comandos `CD`/`CM`).
+- **Cierre automático de día/mes**: el gateway (con hora real vía SNTP) revisa
+  1x/min y dispara `CD`/`CM` a todos los nodos adoptados en el cruce de
+  día/mes, en hora local (`tz` configurable en el portal, default Chile
+  continental). El nodo nunca cierra solo.
+- **F2 mantenido 4-5s** (modo normal): fuerza el chequeo OTA del propio
+  gateway ya, sin esperar la ventana de 6h.
+
 ## 1.4.0 — puente MQTT + identidad NVS separada
 
 ### Identidad separada (sobrevive a los bumps de `CFG_MAGIC`)
