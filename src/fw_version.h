@@ -16,8 +16,9 @@
 //          sondeo normal (el ADOPT, con trama ACK corta, si alcanzaba a tiempo).
 //          Equipos ya en campo: subir "Timeout ACK ms" a 2000 en el portal, no
 //          hace falta reflashear.
+//   1.5.2  comando serial "buscar actualizacion" (alternativa al F2 mantenido)
 #ifdef FW_VERSION_OVERRIDE
 #  define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#  define FW_SEMVER "1.5.1"
+#  define FW_SEMVER "1.5.2"
 #endif

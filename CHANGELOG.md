@@ -3,6 +3,13 @@
 Formato de versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico).
 El firmware embebe `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.5.2 — comando serial "buscar actualizacion"
+
+- Alternativa de banco al F2 mantenido 4-5s: escribir `buscar actualizacion`
+  (o `ota`) por Serial/USB dispara el mismo chequeo OTA forzado. Util con el
+  equipo conectado solo por USB o para automatizarlo desde un script. Se
+  desactiva solo si el USB esta en uso como transporte Modbus RTU (`mbUsb`).
+
 ## 1.5.1 — fix: nodo adoptado siempre offline (timeout ACK corto para la trama v3)
 
 - **`ackTimeoutMs` por defecto `500`→`2000` ms.** La trama `ST` v3 (escalado +
