@@ -129,8 +129,11 @@ static void pubStation(uint8_t s) {
   d["nivel_raw"] = modbusMirrorHreg(b + HB_LVL_RAW);
   d["caudal"] = flw / 100.0;
   d["caudal_raw"] = modbusMirrorHreg(b + HB_FLW_RAW);
-  d["acum_dia_m3"] = u32hi(modbusMirrorHreg(b + HB_DAY_W0), modbusMirrorHreg(b + HB_DAY_W1)) / 10.0;
-  d["acum_mes_m3"] = u32hi(modbusMirrorHreg(b + HB_MON_W0), modbusMirrorHreg(b + HB_MON_W1)) / 10.0;
+  // Escala x1000 desde CONTRACT_VERSION 3 (cambio de rumbo 2026-09: los
+  // acumulados llegan del nodo remoto sin conversion en el LOGO!, ver
+  // ORCHESTRATION/REGISTER_MAP.md).
+  d["acum_dia_m3"] = u32hi(modbusMirrorHreg(b + HB_DAY_W0), modbusMirrorHreg(b + HB_DAY_W1)) / 1000.0;
+  d["acum_mes_m3"] = u32hi(modbusMirrorHreg(b + HB_MON_W0), modbusMirrorHreg(b + HB_MON_W1)) / 1000.0;
   JsonObject e = d["estado"].to<JsonObject>();
   e["presostato"]  = (st & (1 << 0)) != 0;
   e["volt_local"]  = (st & (1 << 1)) != 0;
