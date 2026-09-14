@@ -11,6 +11,7 @@
 #include "mqtt_bridge.h"
 #include "fw_version.h"
 #include "log.h"
+#include <time.h>
 
 #define FW_VERSION FW_VERSION_STR
 
@@ -211,6 +212,39 @@ static void drawNodeViewScreen() {
 
   display.drawString(0, 56, "[F1/F2]=Nav [F2L]=Menu");
   display.display();
+}
+
+// Cierre automatico de dia/mes del totalizador de los nodos (cambio de rumbo
+// 2026-09, Opcion A): el nodo nunca cierra solo -- el gateway, que si tiene
+// hora real via SNTP, dispara CD/CM a todos los nodos adoptados en el cruce.
+// Se revisa 1x/min; de sobra para no perderse el cambio de dia/mes.
+static void dayMonthScheduler() {
+  static uint32_t lastCheckMs = 0;
+  static int      lastDay = -1, lastMonth = -1;
+  if (!netTimeOk()) return;
+  if (lastCheckMs != 0 && millis() - lastCheckMs < 60000) return;
+  lastCheckMs = millis();
+
+  setenv("TZ", mcfg.tz, 1);
+  tzset();
+  time_t t = (time_t)netEpoch();
+  struct tm lt;
+  localtime_r(&t, &lt);
+
+  if (lastDay < 0) { lastDay = lt.tm_mday; lastMonth = lt.tm_mon; return; }  // primer chequeo: solo arma
+
+  if (lt.tm_mday != lastDay) {
+    LOGLN("[tot] cambio de dia -> CD a los nodos adoptados");
+    for (int i = 0; i < MASTER_MAX_NODES; i++)
+      if (mcfg.nodes[i].addr && mcfg.nodes[i].enabled) masterQueueCloseDay(i);
+    lastDay = lt.tm_mday;
+  }
+  if (lt.tm_mon != lastMonth) {
+    LOGLN("[tot] cambio de mes -> CM a los nodos adoptados");
+    for (int i = 0; i < MASTER_MAX_NODES; i++)
+      if (mcfg.nodes[i].addr && mcfg.nodes[i].enabled) masterQueueCloseMonth(i);
+    lastMonth = lt.tm_mon;
+  }
 }
 
 static void handleButtonsNormal() {
@@ -417,6 +451,7 @@ void loop() {
     if (mqttTakeWantOta()) otaMaybeCheck(true);
     otaMaybeCheck(false);      // 1a vez en cuanto haya WiFi; luego cada 6 h
     if (mqttTakeWantRollcall()) masterRollcall();
+    dayMonthScheduler();
     masterPollLoop();
     modbusTask();
     mqttBridgeLoop();          // puente MQTT: reconexion + publicadores + comandos

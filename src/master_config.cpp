@@ -6,12 +6,15 @@
 MasterConfig mcfg;
 
 static const char*    NVS_NS    = "masterio";
-static const uint32_t CFG_MAGIC = 0xA75A3E04;   // bump on struct layout change
+static const uint32_t CFG_MAGIC = 0xA75A3E05;   // bump on struct layout change
                                                 // 03: + mbTransport/mbTcpPort + WiFi STA (Modbus TCP)
                                                 // 04: + puente MQTT.  Desde aqui la identidad
                                                 //     (tabla de nodos, canal LoRa, WiFi STA, MQTT)
                                                 //     va en claves sueltas: un bump de magic ya
                                                 //     NO borra el emparejamiento.
+                                                // 05: + tz (cierre automatico de dia/mes del
+                                                //     totalizador de los nodos, cambio de rumbo
+                                                //     2026-09) -- tambien en claves sueltas.
 
 static void cpstr(char* d, const char* s, size_t n) {
   strncpy(d, s ? s : "", n - 1);
@@ -53,6 +56,8 @@ static void identityLoad(Preferences& p) {
   { String s = p.getString("id_mqsite", mcfg.mqttSite); cpstr(mcfg.mqttSite, s.c_str(), sizeof(mcfg.mqttSite)); }
   mcfg.mqttPubMs = p.getUShort("id_mqpub", mcfg.mqttPubMs);
 
+  { String s = p.getString("id_tz", mcfg.tz); cpstr(mcfg.tz, s.c_str(), sizeof(mcfg.tz)); }
+
   if (p.getUChar("id_nsz", 0) == (uint8_t)sizeof(MasterNode) &&
       p.getBytesLength("id_nodes") == sizeof(mcfg.nodes)) {
     p.getBytes("id_nodes", mcfg.nodes, sizeof(mcfg.nodes));
@@ -88,6 +93,8 @@ static void identitySave(Preferences& p) {
   p.putString("id_mqpass", mcfg.mqttPass);
   p.putString("id_mqsite", mcfg.mqttSite);
   p.putUShort("id_mqpub",  mcfg.mqttPubMs);
+
+  p.putString("id_tz", mcfg.tz);
 
   p.putUChar ("id_nsz",   (uint8_t)sizeof(MasterNode));
   p.putBytes ("id_nodes", mcfg.nodes, sizeof(mcfg.nodes));
@@ -178,6 +185,8 @@ void masterConfigFactory() {
   mcfg.mqttPass[0] = '\0';
   cpstr(mcfg.mqttSite, "planta1", sizeof(mcfg.mqttSite));
   mcfg.mqttPubMs = 2000;
+
+  cpstr(mcfg.tz, "<-04>4<-03>,M9.1.6/24,M4.1.6/24", sizeof(mcfg.tz));  // Chile continental
 
   mcfg.loraFreq  = 915.0f;
   mcfg.loraBw    = 125.0f;

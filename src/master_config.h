@@ -49,6 +49,9 @@ struct MasterConfig {
   char     mqttSite[24];              // <site> del arbol de topicos aysafi/<site>/orq/...
   uint16_t mqttPubMs;                 // periodo base de publicacion (default 2000)
 
+  // --- Zona horaria (cierre de dia/mes del totalizador de los nodos) ---
+  char     tz[40];                    // TZ POSIX; default Chile continental (ver net_master)
+
   // --- LoRa channel (authoritative; pushed to nodes on ADOPT) ---
   float    loraFreq, loraBw;            // 915.0 / 125.0
   uint8_t  loraSf, loraCr, loraSync;    // 9 / 5 / 0x34

@@ -127,6 +127,12 @@ static String buildPage() {
   h += "<div><label>Gateway</label><input name=stagw value='" + ipToStr(mcfg.staGw) + "'></div>";
   h += "<div><label>M&aacute;scara</label><input name=stamask value='" + ipToStr(mcfg.staMask) + "'></div></div>";
 
+  h += F("</fieldset><fieldset><legend>Zona horaria (cierre de d&iacute;a/mes del totalizador)</legend>"
+         "<label>TZ (formato POSIX)</label>");
+  h += "<input name=tz maxlength=39 value='" + String(mcfg.tz) + "'>";
+  h += F("<p style='font-size:12px;color:#aaa;margin:4px 0'>Necesita la WiFi de planta con hora "
+         "sincronizada (SNTP) para cerrar el d&iacute;a/mes de los nodos a la hora local correcta.</p>");
+
   h += F("</fieldset><fieldset><legend>Puente MQTT (publica la orqueste&iacute;a y recibe comandos)</legend>"
          "<label><input type=checkbox name=mqen style=width:auto");
   h += String(mcfg.mqttEnabled ? " checked" : "") + "> Habilitar el puente MQTT";
@@ -208,6 +214,8 @@ static void handleSave() {
   mcfg.staIp   = strToIp(web.arg("staip"));
   mcfg.staGw   = strToIp(web.arg("stagw"));
   mcfg.staMask = strToIp(web.arg("stamask"));
+
+  if (web.hasArg("tz")) web.arg("tz").toCharArray(mcfg.tz, sizeof(mcfg.tz));
 
   mcfg.mqttEnabled = web.hasArg("mqen");
   if (web.hasArg("mqhost")) web.arg("mqhost").toCharArray(mcfg.mqttHost, sizeof(mcfg.mqttHost));
