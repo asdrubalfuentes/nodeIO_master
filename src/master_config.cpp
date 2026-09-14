@@ -196,7 +196,12 @@ void masterConfigFactory() {
   mcfg.loraPwr   = 14;
 
   mcfg.pollMs        = 250;
-  mcfg.ackTimeoutMs  = 500;
+  mcfg.ackTimeoutMs  = 2000;  // v3: la trama ST trae escalado+acumulados+alarma
+                              // (~110-130 bytes) -> a SF9/BW125 el aire de ida y
+                              // vuelta ronda 700-900ms; 500ms (heredado de la
+                              // trama corta pre-pivote) hacia timeout ANTES de
+                              // que la respuesta terminara de llegar. Ver
+                              // CHANGELOG.
   mcfg.offlineAfter  = 3;
   mcfg.pulseMs       = 500;
 

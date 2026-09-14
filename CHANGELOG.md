@@ -3,6 +3,25 @@
 Formato de versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico).
 El firmware embebe `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.5.1 — fix: nodo adoptado siempre offline (timeout ACK corto para la trama v3)
+
+- **`ackTimeoutMs` por defecto `500`→`2000` ms.** La trama `ST` v3 (escalado +
+  4 acumulados int32 + `almBits`, ~110-130 bytes) tarda ~650-700 ms de aire a
+  SF9/BW125 — con 500 ms el gateway declaraba timeout **antes** de que la
+  respuesta del nodo terminara de llegar. Síntoma en campo: nodo adoptado
+  (ADOPT usa una trama `ACK` corta que sí alcanzaba a tiempo), pero
+  `RD` de sondeo normal fallaba el 100% de las veces → tabla del gateway
+  mostraba el nodo permanentemente `offline`/`edad=65535`, mientras el propio
+  nodo mostraba `rx==tx` (sí contestaba). Diagnosticado con logs de depuración
+  temporales en `lora_master.cpp` (revertidos) + captura serial en vivo.
+  Equipos ya en campo: subir "Timeout ACK ms" a 2000 en el portal LoRa, no
+  hace falta reflashear — el default de fábrica solo aplica a NVS nueva/borrada.
+- **Fix pantalla OTA (OLED) "parpadea y no muestra nada":** tras un chequeo
+  OTA manual (F2 4-5s) que no reinicia (al día / error), el `loop()` normal
+  repintaba la pantalla de estado por encima en <250 ms — el resultado de
+  `ota::run()` apenas alcanzaba a parpadear. `otaMaybeCheck(true)` ahora
+  sostiene el resultado en pantalla ~1.8 s antes de volver al flujo normal.
+
 ## 1.5.0 — MAPA A2 + cierre automático de día/mes + F2 OTA (cambio de rumbo)
 
 - **MAPA A2** (`modbus_gw`): nuevo bloque Input Registers (base `200+i*16`) con

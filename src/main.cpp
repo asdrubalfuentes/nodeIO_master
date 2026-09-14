@@ -50,6 +50,13 @@ static void otaMaybeCheck(bool force) {
   ota::Result r = ota::run(oc, otaOled);   // si hay update: descarga + reinicia
   if (!r.ok) LOGF("[ota] %s\n", r.error);
   else if (!r.hasUpdate) LOGLN("[ota] al dia");
+
+  // Si llegamos aqui no hubo reinicio (al dia, o error). En un chequeo forzado
+  // (F2 mantenido) el usuario esta mirando el OLED esperando ver el resultado --
+  // sin esta pausa, el loop() normal repinta la pantalla de estado por encima
+  // en <250ms y el mensaje de ota::run() (via otaOled) apenas alcanza a
+  // parpadear. Se sostiene el resultado un momento antes de volver.
+  if (force) delay(1800);
 }
 
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_MENU, MODE_NODE_VIEW };
