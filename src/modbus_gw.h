@@ -22,6 +22,19 @@
 //
 // Global Input Reg: 900 marca 0x0203, 901 nodeCount, 902 online, 903 localIoEnabled
 // IO local (si aplica): Ireg 904..907 AI, 908 DI bits, 909 rele bits ; Coil 900..903
+//
+// MAPA A2 (cambio de rumbo 2026-09): escalado/totalizador/alarma que ya trae
+// el nodo -- PROTO_FW >= 1.2026.007. Input Reg, por nodo i=0..7, base 200+i*16
+// (200, no 1000: ese numero ya lo usan los COILS de MAPA G -- direcciones de
+// objeto distinto, no chocarian, pero se presta a confusion en la doc/HMI):
+//   c+0   nivel escalado x100 (int16)      c+1   caudal escalado x100 (int16)
+//   c+2/3 acumulado dia nivel, m3 x1000 (int32, palabra alta primero)
+//   c+4/5 acumulado mes nivel, m3 x1000
+//   c+6/7 acumulado dia caudal, m3 x1000
+//   c+8/9 acumulado mes caudal, m3 x1000
+//   c+10  almBits (bit0 nivel.almLo b1 nivel.almHi b2 caudal.almLo b3 caudal.almHi)
+#define MAPA2_BASE    200
+#define MAPA2_STRIDE  16
 
 void modbusBegin();
 void modbusTask();      // llamar en cada loop(): task() de los backends + publish throttled

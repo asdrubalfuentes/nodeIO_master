@@ -14,7 +14,12 @@ static const uint8_t BCAST = 255;
 static volatile bool rxFlag = false;
 static uint8_t  seq = 0;
 
-struct Pending { bool wr; char want[4]; bool wp; uint8_t wpIdx; uint16_t wpMs; };
+struct Pending {
+  bool wr; char want[4];
+  bool wp; uint8_t wpIdx; uint16_t wpMs;
+  bool cd; uint8_t cdMask;   // cierre de dia del totalizador del nodo
+  bool cm; uint8_t cmMask;   // cierre de mes
+};
 static Pending pending[MASTER_MAX_NODES] = {};
 
 // poll state machine
@@ -73,6 +78,16 @@ static void parseStatus(int slot, char*& save) {
   for (uint8_t i = 0; i < 4; i++) { char* a = strtok_r(nullptr, ",", &save); s.ai[i] = a ? (uint16_t)atoi(a) : 0; }
   for (uint8_t i = 0; i < 4; i++) { char* d = strtok_r(nullptr, ",", &save); s.di[i] = d ? (uint8_t)atoi(d) : 0; }
   for (uint8_t i = 0; i < 4; i++) { char* o = strtok_r(nullptr, ",", &save); s.ro[i] = o ? o[0] : 'x'; }
+
+  // Campos nuevos (PROTO_FW >= 1.2026.007). Un nodo con firmware viejo no los
+  // trae -- strtok_r devuelve NULL y se deja el ultimo valor conocido (los
+  // acumulados NO se resetean a 0 por un parseo corto; eng si, es inocuo).
+  for (uint8_t i = 0; i < 2; i++) { char* e = strtok_r(nullptr, ",", &save); if (e) s.eng[i] = (int16_t)atoi(e); }
+  char* d0 = strtok_r(nullptr, ",", &save); if (d0) s.accDia[0] = atol(d0);
+  char* m0 = strtok_r(nullptr, ",", &save); if (m0) s.accMes[0] = atol(m0);
+  char* d1 = strtok_r(nullptr, ",", &save); if (d1) s.accDia[1] = atol(d1);
+  char* m1 = strtok_r(nullptr, ",", &save); if (m1) s.accMes[1] = atol(m1);
+  char* al = strtok_r(nullptr, ",", &save); if (al) s.almBits = (uint8_t)atoi(al);
 }
 
 // Incorpora un nodo a partir de una linea HERE ya tokenizada hasta "HERE".
@@ -168,6 +183,18 @@ void masterQueuePulse(int slot, uint8_t idx1, uint16_t ms) {
   pending[slot].wp    = true;
 }
 
+void masterQueueCloseDay(int slot, uint8_t mask) {
+  if (slot < 0 || slot >= MASTER_MAX_NODES) return;
+  pending[slot].cdMask = mask;
+  pending[slot].cd     = true;
+}
+
+void masterQueueCloseMonth(int slot, uint8_t mask) {
+  if (slot < 0 || slot >= MASTER_MAX_NODES) return;
+  pending[slot].cmMask = mask;
+  pending[slot].cm     = true;
+}
+
 void masterPollLoop() {
   char text[220];
   if (rxFlag) { int L = readFrameNow(text, sizeof(text)); if (L > 0) dispatchReply(text); }
@@ -198,6 +225,14 @@ void masterPollLoop() {
       snprintf(b, sizeof(b), "WP,%u,%u", q.wpIdx, q.wpMs);
       sendFrame(addr, b);
       q.wp = false;
+    } else if (q.cd) {
+      char b[16]; snprintf(b, sizeof(b), "CD,%u", q.cdMask);
+      sendFrame(addr, b);
+      q.cd = false;
+    } else if (q.cm) {
+      char b[16]; snprintf(b, sizeof(b), "CM,%u", q.cmMask);
+      sendFrame(addr, b);
+      q.cm = false;
     } else {
       sendFrame(addr, "RD");
     }

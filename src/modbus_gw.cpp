@@ -30,6 +30,15 @@ static uint32_t mapgSetAt[MAPG_CMD_COUNT] = {};
 // recibio la escritura cuando hay dos backends activos.
 static bool relaySet[MASTER_MAX_NODES][4] = {};
 
+// escribe un int32 en 2 Ireg seguidos, palabra alta primero (misma convencion
+// que el acumulado de MAPA B / mqtt_bridge u32hi()).
+template <class MB>
+static void putI32(MB& mb, uint16_t addr, int32_t v) {
+  uint32_t u = (uint32_t)v;
+  mb.Ireg(addr,     (uint16_t)(u >> 16));
+  mb.Ireg(addr + 1, (uint16_t)(u & 0xFFFF));
+}
+
 // ---- write callbacks ----------------------------------------------------
 static uint16_t onNodeCoil(TRegister* reg, uint16_t val) {
   uint16_t off  = reg->address.address;
@@ -65,6 +74,7 @@ static void mapRegister(MB& mb) {
     mb.addIsts(b, false, 8);
     mb.addCoil(b, false, 8);
     mb.onSetCoil(b, onNodeCoil, 8);
+    mb.addIreg(MAPA2_BASE + i * MAPA2_STRIDE, 0, MAPA2_STRIDE);
   }
   mb.addIreg(GLOBAL_BASE, 0, 16);
 
@@ -138,6 +148,15 @@ static void publishTo(MB& mb) {
 
     uint32_t ago = s.lastReplyMs ? (millis() - s.lastReplyMs) / 1000UL : 65535UL;
     mb.Ireg(b + 8, (uint16_t)(ago > 65535UL ? 65535UL : ago));
+
+    uint16_t c = MAPA2_BASE + i * MAPA2_STRIDE;
+    mb.Ireg(c + 0, (uint16_t)s.eng[0]);
+    mb.Ireg(c + 1, (uint16_t)s.eng[1]);
+    putI32(mb, c + 2, s.accDia[0]);
+    putI32(mb, c + 4, s.accMes[0]);
+    putI32(mb, c + 6, s.accDia[1]);
+    putI32(mb, c + 8, s.accMes[1]);
+    mb.Ireg(c + 10, s.almBits);
     mb.Ists(b + 4, s.online);
 
     if (nd.enabled && s.online) online++;
