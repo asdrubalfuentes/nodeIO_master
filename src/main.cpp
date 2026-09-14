@@ -56,6 +56,7 @@ static Mode     mode            = MODE_NORMAL;
 static uint32_t btn1DownSince   = 0;
 static uint32_t btn2DownSince   = 0;
 static uint32_t btnBuiltinDownSince = 0;
+static bool     btn2OtaFired    = false;   // F2 (modo normal) 4s = forzar chequeo OTA ya
 static uint32_t lastDrawMs      = 0;
 static int      selectedNode    = 0;
 
@@ -237,6 +238,19 @@ static void handleButtonsNormal() {
       enterMenu();
     }
     btn1DownSince = 0;
+  }
+
+  // F2 mantenido 4-5s: fuerza el chequeo OTA ya (sin esperar la ventana de 6h).
+  // Solo tiene efecto si hay WiFi de planta con salida a Internet.
+  if (btn2_pressed) {
+    if (btn2DownSince == 0) btn2DownSince = millis();
+    else if (!btn2OtaFired && millis() - btn2DownSince > 4000) {
+      btn2OtaFired = true;
+      otaMaybeCheck(true);
+    }
+  } else {
+    btn2DownSince = 0;
+    btn2OtaFired  = false;
   }
 }
 
