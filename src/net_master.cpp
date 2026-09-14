@@ -19,8 +19,16 @@ void netBegin() {
   WiFi.setAutoReconnect(true);
 
   if (mcfg.staStatic && mcfg.staIp) {
+    // Sin dns1/dns2, WiFi.config() los deja en 0.0.0.0 -- con IP fija el
+    // equipo queda sin ningun DNS configurado (a diferencia de DHCP, que
+    // lo recibe solo del router) y hostByName() falla siempre, sin
+    // importar la red: asi fallaba el chequeo OTA (github.com) y quedaba
+    // rota tambien la hora SNTP (pool.ntp.org/time.google.com) que usa el
+    // cierre automatico de dia/mes. dns1 = el propio gateway LAN (la
+    // mayoria hace de proxy DNS); dns2 = publico de respaldo.
     WiFi.config(IPAddress(mcfg.staIp), IPAddress(mcfg.staGw),
-                IPAddress(mcfg.staMask ? mcfg.staMask : 0xFFFFFF00UL));
+                IPAddress(mcfg.staMask ? mcfg.staMask : 0xFFFFFF00UL),
+                IPAddress(mcfg.staGw), IPAddress(8, 8, 8, 8));
   }
   WiFi.begin(mcfg.staSsid, mcfg.staPass);
   lastAttempt = millis();

@@ -3,6 +3,19 @@
 Formato de versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico).
 El firmware embebe `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.5.3 — fix: sin DNS con IP fija (OTA y SNTP rotos por igual)
+
+- `WiFi.config()` en modo IP fija (`mcfg.staStatic`) no pasaba `dns1`/`dns2` -- a
+  diferencia de DHCP (que recibe el DNS del router automaticamente), el
+  gateway quedaba **sin ningun servidor DNS configurado** y `hostByName()`
+  fallaba siempre, el 100% de las veces, sin importar la red ni cuanto
+  tiempo pasara desde el arranque. Afectaba por igual al chequeo OTA
+  (`github.com`) y a la hora SNTP (`pool.ntp.org`/`time.google.com`) que usa
+  el cierre automatico de dia/mes -- ambos quedaban rotos en cualquier
+  gateway configurado con IP fija.
+- Fix: `dns1` = el propio gateway LAN (la mayoria de los routers hacen de
+  proxy DNS), `dns2` = `8.8.8.8` de respaldo.
+
 ## 1.5.2 — comando serial "buscar actualizacion"
 
 - Alternativa de banco al F2 mantenido 4-5s: escribir `buscar actualizacion`

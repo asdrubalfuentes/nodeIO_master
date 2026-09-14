@@ -17,8 +17,13 @@
 //          Equipos ya en campo: subir "Timeout ACK ms" a 2000 en el portal, no
 //          hace falta reflashear.
 //   1.5.2  comando serial "buscar actualizacion" (alternativa al F2 mantenido)
+//   1.5.3  fix: sin DNS con IP fija. WiFi.config() no traia dns1/dns2 -> con
+//          IP fija (a diferencia de DHCP) el equipo quedaba sin NINGUN DNS
+//          configurado y hostByName() fallaba siempre (OTA/github.com y SNTP/
+//          pool.ntp.org rotos por igual, no era un problema de red). dns1 =
+//          gateway LAN, dns2 = 8.8.8.8 de respaldo.
 #ifdef FW_VERSION_OVERRIDE
 #  define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#  define FW_SEMVER "1.5.2"
+#  define FW_SEMVER "1.5.3"
 #endif
