@@ -59,6 +59,45 @@ static void otaMaybeCheck(bool force) {
   if (force) delay(1800);
 }
 
+// ---- comando por Serial: "buscar actualizacion" ---------------------------
+// Alternativa de banco al F2 mantenido 4-5s: util con el equipo solo
+// conectado por USB (sin acceso al boton, o automatizando desde un script).
+// Se desactiva si el USB esta en uso como transporte Modbus RTU (mbUsb) --
+// ahi los bytes que llegan por Serial son tramas Modbus, no texto.
+static bool serialCmdIs(const char *line, const char *cmd) {
+  while (*line == ' ') line++;
+  size_t n = strlen(cmd);
+  if (strncasecmp(line, cmd, n) != 0) return false;
+  char c = line[n];
+  return c == '\0' || c == '\r' || c == '\n' || c == ' ';
+}
+
+static void serviceSerialCommands() {
+  static char buf[64];
+  static uint8_t len = 0;
+  if (mcfg.mbUsb) { while (Serial.available()) Serial.read(); len = 0; return; }
+
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (len > 0) {
+        buf[len] = '\0';
+        len = 0;
+        if (serialCmdIs(buf, "buscar actualizacion") ||
+            serialCmdIs(buf, "buscar actualizaci\xC3\xB3n") ||   // con tilde (UTF-8)
+            serialCmdIs(buf, "ota")) {
+          Serial.println("[serial] buscar actualizacion -> forzando chequeo OTA");
+          otaMaybeCheck(true);
+        } else {
+          Serial.printf("[serial] comando no reconocido: \"%s\" (probar: buscar actualizacion)\n", buf);
+        }
+      }
+      continue;
+    }
+    if (len < sizeof(buf) - 1) buf[len++] = c;
+  }
+}
+
 enum Mode { MODE_NORMAL, MODE_PORTAL, MODE_MENU, MODE_NODE_VIEW };
 static Mode     mode            = MODE_NORMAL;
 static uint32_t btn1DownSince   = 0;
@@ -455,6 +494,7 @@ void loop() {
   if (mode == MODE_NORMAL) {
     handleButtonsNormal();
     netLoop();
+    serviceSerialCommands();
     if (mqttTakeWantOta()) otaMaybeCheck(true);
     otaMaybeCheck(false);      // 1a vez en cuanto haya WiFi; luego cada 6 h
     if (mqttTakeWantRollcall()) masterRollcall();
