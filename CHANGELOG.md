@@ -3,6 +3,22 @@
 Formato de versión del canal OTA: `MAJOR.MINOR.PATCH` (semver numérico).
 El firmware embebe `FW_SEMVER`; el CI lo sobreescribe desde el tag `vX.Y.Z`.
 
+## 1.5.4 — diagnóstico: monitoreo de heap (investigando OLED "enbasurado")
+
+- **Reporte de campo:** el OLED muestra un patrón de ruido tipo "matrix
+  horizontal", se limpia solo con el reinicio (incluso varias veces), y
+  **no le pasa a `nodeIO`** (mismo hardware/librería de OLED, mucho menos
+  tráfico de heap). El framebuffer de la librería SSD1306 se reserva con
+  `malloc()` en el heap (`OLEDDisplay.cpp`) — un candidato natural es
+  fragmentación/corrupción de heap por el tráfico continuo de otros
+  módulos (candidatos: `JsonDocument` del puente MQTT en cada publicación,
+  TLS del chequeo OTA), algo que `nodeIO` casi no genera.
+- Este release **no corrige nada todavía** — solo agrega `[heap] libre=...
+  minimo_desde_boot=... bloque_max=...` cada 5 min por Serial, para
+  correlacionar la caída de heap con el momento real en que aparece el
+  patrón la próxima vez. Pendiente: revisar con datos reales una vez que
+  el equipo lo reciba por OTA y se repita el problema.
+
 ## 1.5.3 — fix: sin DNS con IP fija (OTA y SNTP rotos por igual)
 
 - `WiFi.config()` en modo IP fija (`mcfg.staStatic`) no pasaba `dns1`/`dns2` -- a

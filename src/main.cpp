@@ -59,6 +59,23 @@ static void otaMaybeCheck(bool force) {
   if (force) delay(1800);
 }
 
+// ---- diagnostico temporal: monitoreo de heap ------------------------------
+// Investigando un reporte de campo: el OLED se "enbasura" (patron tipo ruido
+// horizontal) tras un tiempo de operacion, se limpia solo con el reinicio, y
+// NO le pasa a nodeIO. El framebuffer de la libreria SSD1306 (OLEDDisplay.cpp)
+// se reserva con malloc() en el heap -- si algo mas corrompe/fragmenta el
+// heap (candidatos: JsonDocument del puente MQTT en cada publicacion, TLS del
+// chequeo OTA), podria pisar ese buffer. Log periodico para correlacionar la
+// caida de heap libre con el momento en que aparezca el patron.
+static void serviceHeapWatch() {
+  static uint32_t last = 0;
+  if (millis() - last < 300000UL) return;   // cada 5 min
+  last = millis();
+  LOGF("[heap] libre=%u  minimo_desde_boot=%u  bloque_max=%u\n",
+       (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
+       (unsigned)ESP.getMaxAllocHeap());
+}
+
 // ---- comando por Serial: "buscar actualizacion" ---------------------------
 // Alternativa de banco al F2 mantenido 4-5s: util con el equipo solo
 // conectado por USB (sin acceso al boton, o automatizando desde un script).
@@ -502,6 +519,7 @@ void loop() {
     masterPollLoop();
     modbusTask();
     mqttBridgeLoop();          // puente MQTT: reconexion + publicadores + comandos
+    serviceHeapWatch();        // diagnostico temporal (OLED "enbasurado" en campo)
     drawStatusScreen();
   }
   else if (mode == MODE_PORTAL) {

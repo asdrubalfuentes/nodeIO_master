@@ -22,8 +22,15 @@
 //          configurado y hostByName() fallaba siempre (OTA/github.com y SNTP/
 //          pool.ntp.org rotos por igual, no era un problema de red). dns1 =
 //          gateway LAN, dns2 = 8.8.8.8 de respaldo.
+//   1.5.4  diagnostico: log periodico de heap libre (cada 5 min) -- reporte de
+//          campo de OLED "enbasurado" (patron de ruido horizontal) que se
+//          limpia solo con el reinicio y no le pasa a nodeIO. El framebuffer
+//          de la libreria SSD1306 se reserva con malloc() en el heap; se
+//          sospecha fragmentacion/corrupcion desde el puente MQTT (JsonDocument
+//          por publicacion) y/o TLS del chequeo OTA. Sin fix todavia -- solo
+//          instrumentacion para correlacionar con datos reales.
 #ifdef FW_VERSION_OVERRIDE
 #  define FW_SEMVER FW_VERSION_OVERRIDE
 #else
-#  define FW_SEMVER "1.5.3"
+#  define FW_SEMVER "1.5.4"
 #endif
